@@ -1,4 +1,8 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::{
+    fs::File,
+    hash::{DefaultHasher, Hasher},
+    path::PathBuf,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -117,5 +121,28 @@ impl CompletedFrame {
             self.0.last_edit.timestamp(),
         ]);
         serde_json::to_string_pretty(&json).unwrap()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct WatsonState {
+    project: String,
+    start: i64,
+    tags: Vec<Tag>,
+}
+
+impl WatsonState {
+    pub fn from(frame: Frame) -> Self {
+        Self {
+            project: frame.project,
+            start: frame.start.timestamp(),
+            tags: frame.tags,
+        }
+    }
+
+    pub fn save(&self, path: &PathBuf) -> Result<(), std::io::Error> {
+        let mut file = File::create(path)?;
+        serde_json::to_writer(&mut file, self)?;
+        Ok(())
     }
 }

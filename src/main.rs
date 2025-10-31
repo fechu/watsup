@@ -1,7 +1,8 @@
-use chrono::Local;
 use clap::{CommandFactory, Parser, Subcommand};
+mod config;
 mod frame;
 use frame::Frame;
+use frame::WatsonState;
 use simple_logger::SimpleLogger;
 
 use crate::frame::Tag;
@@ -29,6 +30,7 @@ fn main() {
     SimpleLogger::new().env().init().unwrap();
 
     let cli = Cli::parse();
+    let config = config::Config::default();
 
     match &cli.command {
         Some(Commands::Start { project, tags }) => {
@@ -36,16 +38,13 @@ fn main() {
                 .iter()
                 .filter_map(|tag| Tag::new(tag.to_string()))
                 .collect();
-            let mut frame = Frame::new(project, tags);
-            let frame = frame.set_end(Local::now() + chrono::Duration::minutes(1));
+            let frame = Frame::new(project, tags);
 
-            log::info!("Frame started: {:?}", frame);
-            log::info!("Frame started: {:?}", frame.as_watson_json());
-
-            // Write the frame to file /tmp/frame.json
-            let file_path = "/tmp/frame.json";
-            let json = frame.as_watson_json();
-            std::fs::write(file_path, json).expect("Failed to write frame to file");
+            // Write the frame to file
+            let state = WatsonState::from(frame);
+            state
+                .save(&config.get_state_path())
+                .expect("Could not write state")
         }
         Some(Commands::Stop) => {
             log::info!("Frame stopped");

@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use chrono::TimeZone;
+use chrono::{Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -136,6 +136,50 @@ impl CompletedFrame {
             self.0.last_edit.timestamp(),
         ])
     }
+
+    fn from_watson_json(json: &Value) -> Result<CompletedFrame, String> {
+        let array = json
+            .as_array()
+            .ok_or("Encountered unexpected watson frame format")?;
+
+        let start = array[0].as_i64().ok_or("Invalid start time")?;
+        let end = array[1].as_i64().ok_or("Invalid end time")?;
+        let project = array[2].as_str().ok_or("Invalid project name")?;
+        let id = array[3].as_str().ok_or("Invalid frame ID")?;
+        let tags = array[4]
+            .as_array()
+            .ok_or("Invalid tags")?
+            .iter()
+            .filter_map(|s| Tag::new(s.to_string()))
+            .collect::<Vec<_>>();
+        let last_edit = array[5].as_i64().ok_or("Invalid last edit time")?;
+
+        let start_time = Local
+            .timestamp_opt(start, 0)
+            .earliest()
+            .ok_or("Failed to parse start time")?;
+
+        let end_time = Local
+            .timestamp_opt(end, 0)
+            .latest()
+            .ok_or("Failed to parse end time")?;
+
+        let last_edit = Local
+            .timestamp_opt(last_edit, 0)
+            .earliest()
+            .ok_or("Failed to parse last edit")?;
+
+        Ok(CompletedFrame {
+            0: Frame {
+                start: start_time,
+                end: Some(end_time),
+                project: project.to_string(),
+                id: id.to_string(),
+                tags,
+                last_edit: last_edit,
+            },
+        })
+    }
 }
 
 pub struct CompletedFrameStore {
@@ -143,8 +187,20 @@ pub struct CompletedFrameStore {
 }
 
 impl CompletedFrameStore {
-    pub fn new() -> Self {
-        Self { frames: Vec::new() }
+    pub fn load(path: &PathBuf) -> Result<Self, String> {
+        let json = std::fs::read_to_string(path).unwrap();
+
+        let frames: Value = serde_json::from_str(&json).unwrap();
+        match frames {
+            Value::Array(frames) => {
+                let f = frames
+                    .iter()
+                    .filter_map(|frame| CompletedFrame::from_watson_json(frame).ok())
+                    .collect();
+                Ok(Self { frames: f })
+            }
+            _ => Err(String::from("Expected an array of frames in file")),
+        }
     }
 
     pub fn add_frame(&mut self, frame: CompletedFrame) {

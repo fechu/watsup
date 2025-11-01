@@ -1,11 +1,13 @@
 use clap::{CommandFactory, Parser, Subcommand};
 mod config;
 mod frame;
+use frame::CompletedFrameStore;
 use frame::Frame;
 use frame::WatsonState;
 use simple_logger::SimpleLogger;
 
 use crate::frame::Tag;
+use crate::frame::reset_state;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -47,7 +49,21 @@ fn main() {
                 .expect("Could not write state")
         }
         Some(Commands::Stop) => {
-            log::info!("Frame stopped");
+            match WatsonState::load(&config.get_state_path()) {
+                None => log::error!("No frame to stop"),
+                Some(state) => {
+                    let mut frame = Frame::from(state);
+                    let completed_frame = frame.set_end(chrono::Local::now());
+                    // TODO: Load the frame store properly
+                    let mut frame_store = CompletedFrameStore::new();
+                    frame_store.add_frame(completed_frame);
+                    frame_store
+                        .save(&config.get_frames_path())
+                        .expect("Could not save frame store");
+                    reset_state(&config.get_state_path());
+                    log::info!("Frame stopped");
+                }
+            };
         }
         None => Cli::command().print_help().unwrap(),
     }

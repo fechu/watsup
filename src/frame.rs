@@ -1,11 +1,13 @@
 use std::{
     fs::File,
     hash::{DefaultHasher, Hasher},
+    io::{Read, Write},
     path::PathBuf,
 };
 
+use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
 /// Represents a frame associated with a specific project.
@@ -32,19 +34,32 @@ pub struct Frame {
     last_edit: chrono::DateTime<chrono::Local>,
 }
 
+fn generate_id() -> String {
+    // Generate a unique ID for the frame using a hash of the current time.
+    let mut hasher = DefaultHasher::new();
+    hasher.write(chrono::Local::now().to_string().as_bytes());
+    format!("{:x}", hasher.finish())
+}
+
 impl Frame {
     pub fn new(name: &str, tags: Vec<Tag>) -> Self {
-        // Generate a unique ID for the frame using a hash of the current time.
-        let mut hasher = DefaultHasher::new();
-        hasher.write(chrono::Local::now().to_string().as_bytes());
-        let id = format!("{:x}", hasher.finish());
-
         Frame {
             project: name.to_string(),
-            id: id,
+            id: generate_id(),
             start: chrono::Local::now(),
             end: None,
             tags: tags,
+            last_edit: chrono::Local::now(),
+        }
+    }
+
+    pub fn from(state: WatsonState) -> Self {
+        Frame {
+            project: state.project,
+            id: generate_id(),
+            start: chrono::Local.timestamp_opt(state.start, 0).unwrap(),
+            end: None,
+            tags: state.tags,
             last_edit: chrono::Local::now(),
         }
     }
@@ -104,8 +119,8 @@ impl CompletedFrame {
         }
     }
 
-    pub fn as_watson_json(&self) -> String {
-        let json = json!([
+    fn as_watson_json(&self) -> Value {
+        json!([
             self.0.start.timestamp(),
             self.0
                 .end
@@ -119,9 +134,39 @@ impl CompletedFrame {
                 .map(|tag| tag.to_string())
                 .collect::<Vec<_>>(),
             self.0.last_edit.timestamp(),
-        ]);
-        serde_json::to_string_pretty(&json).unwrap()
+        ])
     }
+}
+
+pub struct CompletedFrameStore {
+    frames: Vec<CompletedFrame>,
+}
+
+impl CompletedFrameStore {
+    pub fn new() -> Self {
+        Self { frames: Vec::new() }
+    }
+
+    pub fn add_frame(&mut self, frame: CompletedFrame) {
+        self.frames.push(frame);
+    }
+
+    pub fn save(&self, store_path: &PathBuf) -> Result<(), std::io::Error> {
+        let json_array = json!(
+            self.frames
+                .iter()
+                .map(|frame| frame.as_watson_json())
+                .collect::<Vec<_>>()
+        );
+        let json = serde_json::to_string_pretty(&json_array).unwrap();
+        std::fs::write(store_path, json)?;
+        Ok(())
+    }
+}
+
+pub fn reset_state(path: &PathBuf) {
+    let mut file = File::create(path).expect("Cannot write state file");
+    file.write(b"{}").expect("Cannot write state file");
 }
 
 #[derive(Serialize, Deserialize)]
@@ -144,5 +189,21 @@ impl WatsonState {
         let mut file = File::create(path)?;
         serde_json::to_writer(&mut file, self)?;
         Ok(())
+    }
+
+    pub fn load(path: &PathBuf) -> Option<WatsonState> {
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(_) => return None,
+        };
+        let mut contents = String::new();
+        match file.read_to_string(&mut contents) {
+            Ok(_) => (),
+            Err(_) => return None,
+        };
+        match serde_json::from_str(&contents) {
+            Ok(state) => Some(state),
+            Err(_) => None,
+        }
     }
 }

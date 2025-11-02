@@ -55,8 +55,7 @@ fn main() {
                     let mut frame = Frame::from(state);
                     let completed_frame = frame.set_end(chrono::Local::now());
                     // TODO: Load the frame store properly
-                    let mut frame_store =
-                        CompletedFrameStore::load(&config.get_frames_path()).unwrap();
+                    let mut frame_store = CompletedFrameStore::default();
                     frame_store.add_frame(completed_frame);
                     frame_store
                         .save(&config.get_frames_path())

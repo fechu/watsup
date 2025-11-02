@@ -9,6 +9,8 @@ use chrono::{Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::config::Config;
+
 #[derive(Debug, Clone)]
 /// Represents a frame associated with a specific project.
 ///
@@ -187,6 +189,9 @@ pub struct CompletedFrameStore {
 }
 
 impl CompletedFrameStore {
+    /**
+     * Load a CompletedFrameStore from a file
+     */
     pub fn load(path: &PathBuf) -> Result<Self, String> {
         let json = std::fs::read_to_string(path).unwrap();
 
@@ -217,6 +222,16 @@ impl CompletedFrameStore {
         let json = serde_json::to_string_pretty(&json_array).unwrap();
         std::fs::write(store_path, json)?;
         Ok(())
+    }
+}
+
+impl Default for CompletedFrameStore {
+    /**
+     * Creates a new CompletedFrameStore instance with default configuration.
+     */
+    fn default() -> Self {
+        let config = Config::default();
+        CompletedFrameStore::load(&config.get_frames_path()).expect("Failed to read frames store")
     }
 }
 

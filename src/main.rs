@@ -26,7 +26,9 @@ enum Commands {
         /// Tags to associate with the frame
         tags: Vec<String>,
     },
+    /// Stop the current frame
     Stop,
+    /// List all projects
     Projects,
 }
 
@@ -59,12 +61,11 @@ fn main() {
             }
         }
         Some(Commands::Projects) => {
-            // TODO: Implement
-            // let frame_store = CompletedFrameStore::load(&config.get_frames_path()).unwrap();
-            // let projects = frame_store.get_projects();
-            // for project in projects {
-            //     println!("{}", project);
-            // }
+            let frame_store = CompletedFrameStore::load(&config.get_frames_path()).unwrap();
+            let projects = frame_store.get_projects();
+            for project in projects {
+                println!("{}", project);
+            }
             Ok(())
         }
         None => Cli::command().print_help().map_err(|e| e.to_string()),

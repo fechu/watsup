@@ -1,4 +1,5 @@
 use std::{
+    fmt::{self, Display},
     fs::File,
     hash::{DefaultHasher, Hasher},
     io::{Read, Write},
@@ -98,6 +99,12 @@ impl NonEmptyString {
 
     pub fn to_string(&self) -> String {
         self.0.clone()
+    }
+}
+
+impl Display for NonEmptyString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -227,6 +234,10 @@ impl CompletedFrameStore {
         let json = serde_json::to_string_pretty(&json_array).unwrap();
         std::fs::write(store_path, json)?;
         Ok(())
+    }
+
+    pub fn get_projects(&self) -> Vec<NonEmptyString> {
+        self.frames.iter().map(|f| f.0.project.clone()).collect()
     }
 }
 

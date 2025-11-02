@@ -6,6 +6,7 @@ use frame::Frame;
 use frame::WatsonState;
 use simple_logger::SimpleLogger;
 
+use crate::config::Config;
 use crate::frame::NonEmptyString;
 use crate::frame::reset_state;
 
@@ -26,6 +27,7 @@ enum Commands {
         tags: Vec<String>,
     },
     Stop,
+    Projects,
 }
 
 fn main() {
@@ -34,37 +36,60 @@ fn main() {
     let cli = Cli::parse();
     let config = config::Config::default();
 
-    match &cli.command {
-        Some(Commands::Start { project, tags }) => {
-            let tags = tags
-                .iter()
-                .filter_map(|tag| NonEmptyString::new(tag.to_string()))
-                .collect();
-            let frame = Frame::new(project, tags);
-
-            // Write the frame to file
-            let state = WatsonState::from(frame);
-            state
-                .save(&config.get_state_path())
-                .expect("Could not write state")
-        }
+    let result = match &cli.command {
+        Some(Commands::Start { project, tags }) => start_project(project, tags, &config),
         Some(Commands::Stop) => {
             match WatsonState::load(&config.get_state_path()) {
-                None => log::error!("No frame to stop"),
+                None => Err(String::from("No project started")),
                 Some(state) => {
                     let mut frame = Frame::from(state);
                     let completed_frame = frame.set_end(chrono::Local::now());
                     // TODO: Load the frame store properly
                     let mut frame_store = CompletedFrameStore::default();
                     frame_store.add_frame(completed_frame);
-                    frame_store
-                        .save(&config.get_frames_path())
-                        .expect("Could not save frame store");
-                    reset_state(&config.get_state_path());
-                    log::info!("Frame stopped");
+                    match frame_store.save(&config.get_frames_path()) {
+                        Err(e) => Err(e.to_string()),
+                        Ok(_) => {
+                            reset_state(&config.get_state_path());
+                            log::info!("Frame stopped");
+                            Ok(())
+                        }
+                    }
                 }
-            };
+            }
         }
-        None => Cli::command().print_help().unwrap(),
-    }
+        Some(Commands::Projects) => {
+            // TODO: Implement
+            // let frame_store = CompletedFrameStore::load(&config.get_frames_path()).unwrap();
+            // let projects = frame_store.get_projects();
+            // for project in projects {
+            //     println!("{}", project);
+            // }
+            Ok(())
+        }
+        None => Cli::command().print_help().map_err(|e| e.to_string()),
+    };
+
+    match result {
+        Err(err) => {
+            println!("Error: {}", err);
+            std::process::exit(1)
+        }
+        _ => {}
+    };
+}
+
+fn start_project(project: &str, tags: &[String], config: &Config) -> Result<(), String> {
+    let project = NonEmptyString::new(&project.to_string()).ok_or("Invalid project name")?;
+    let tags = tags
+        .iter()
+        .filter_map(|tag| NonEmptyString::new(tag))
+        .collect();
+    let frame = Frame::new(project, tags);
+
+    // Write the frame to file
+    let state = WatsonState::from(frame);
+    state
+        .save(&config.get_state_path())
+        .map_err(|e| e.to_string())
 }

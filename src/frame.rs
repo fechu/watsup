@@ -18,7 +18,7 @@ use crate::config::Config;
 /// and provide methods to interact with it.
 pub struct Frame {
     /// The project the frame is associated with.
-    project: String,
+    project: NonEmptyString,
 
     /// The frame's unique identifier.
     id: String,
@@ -44,9 +44,9 @@ fn generate_id() -> String {
 }
 
 impl Frame {
-    pub fn new(name: &str, tags: Vec<NonEmptyString>) -> Self {
+    pub fn new(name: NonEmptyString, tags: Vec<NonEmptyString>) -> Self {
         Frame {
-            project: name.to_string(),
+            project: name,
             id: generate_id(),
             start: chrono::Local::now(),
             end: None,
@@ -88,8 +88,12 @@ impl Frame {
 pub struct NonEmptyString(String);
 
 impl NonEmptyString {
-    pub fn new(t: String) -> Option<Self> {
-        if t.is_empty() { None } else { Some(Self(t)) }
+    pub fn new(t: &str) -> Option<Self> {
+        if t.is_empty() {
+            None
+        } else {
+            Some(Self(t.to_string()))
+        }
     }
 
     pub fn to_string(&self) -> String {
@@ -146,13 +150,14 @@ impl CompletedFrame {
 
         let start = array[0].as_i64().ok_or("Invalid start time")?;
         let end = array[1].as_i64().ok_or("Invalid end time")?;
-        let project = array[2].as_str().ok_or("Invalid project name")?;
+        let project = NonEmptyString::new(array[2].as_str().ok_or("Invalid project name")?)
+            .expect("Invalid project name");
         let id = array[3].as_str().ok_or("Invalid frame ID")?;
         let tags = array[4]
             .as_array()
             .ok_or("Invalid tags")?
             .iter()
-            .filter_map(|s| NonEmptyString::new(s.to_string()))
+            .filter_map(|s| NonEmptyString::new(&s.to_string()))
             .collect::<Vec<_>>();
         let last_edit = array[5].as_i64().ok_or("Invalid last edit time")?;
 
@@ -175,7 +180,7 @@ impl CompletedFrame {
             0: Frame {
                 start: start_time,
                 end: Some(end_time),
-                project: project.to_string(),
+                project: project,
                 id: id.to_string(),
                 tags,
                 last_edit: last_edit,
@@ -242,7 +247,7 @@ pub fn reset_state(path: &PathBuf) {
 
 #[derive(Serialize, Deserialize)]
 pub struct WatsonState {
-    project: String,
+    project: NonEmptyString,
     start: i64,
     tags: Vec<NonEmptyString>,
 }

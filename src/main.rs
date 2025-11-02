@@ -86,11 +86,14 @@ fn start_project(project: &str, tags: &[String], config: &Config) -> Result<(), 
         .iter()
         .filter_map(|tag| NonEmptyString::new(tag))
         .collect();
-    let frame = Frame::new(project, tags);
+    let frame = Frame::new(project.clone(), tags);
+    log::debug!("Starting frame. frame={:?}", frame);
 
     // Write the frame to file
     let state = WatsonState::from(frame);
-    state
+    let result = state
         .save(&config.get_state_path())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    println!("Project {} started", project);
+    result
 }

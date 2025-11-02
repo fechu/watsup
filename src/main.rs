@@ -6,7 +6,7 @@ use frame::Frame;
 use frame::WatsonState;
 use simple_logger::SimpleLogger;
 
-use crate::frame::Tag;
+use crate::frame::NonEmptyString;
 use crate::frame::reset_state;
 
 #[derive(Parser)]
@@ -38,7 +38,7 @@ fn main() {
         Some(Commands::Start { project, tags }) => {
             let tags = tags
                 .iter()
-                .filter_map(|tag| Tag::new(tag.to_string()))
+                .filter_map(|tag| NonEmptyString::new(tag.to_string()))
                 .collect();
             let frame = Frame::new(project, tags);
 

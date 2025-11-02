@@ -30,7 +30,7 @@ pub struct Frame {
     end: Option<chrono::DateTime<chrono::Local>>,
 
     /// The tags associated with the frame.
-    tags: Vec<Tag>,
+    tags: Vec<NonEmptyString>,
 
     /// The last time the frame was edited.
     last_edit: chrono::DateTime<chrono::Local>,
@@ -44,7 +44,7 @@ fn generate_id() -> String {
 }
 
 impl Frame {
-    pub fn new(name: &str, tags: Vec<Tag>) -> Self {
+    pub fn new(name: &str, tags: Vec<NonEmptyString>) -> Self {
         Frame {
             project: name.to_string(),
             id: generate_id(),
@@ -85,9 +85,9 @@ impl Frame {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Tag(String);
+pub struct NonEmptyString(String);
 
-impl Tag {
+impl NonEmptyString {
     pub fn new(t: String) -> Option<Self> {
         if t.is_empty() { None } else { Some(Self(t)) }
     }
@@ -107,7 +107,7 @@ pub struct FrameEdit {
     /// End time as unix timestamp
     end: Option<i64>,
     /// Tags associated with the frame
-    tags: Vec<Tag>,
+    tags: Vec<NonEmptyString>,
 }
 
 #[derive(Debug)]
@@ -152,7 +152,7 @@ impl CompletedFrame {
             .as_array()
             .ok_or("Invalid tags")?
             .iter()
-            .filter_map(|s| Tag::new(s.to_string()))
+            .filter_map(|s| NonEmptyString::new(s.to_string()))
             .collect::<Vec<_>>();
         let last_edit = array[5].as_i64().ok_or("Invalid last edit time")?;
 
@@ -244,7 +244,7 @@ pub fn reset_state(path: &PathBuf) {
 pub struct WatsonState {
     project: String,
     start: i64,
-    tags: Vec<Tag>,
+    tags: Vec<NonEmptyString>,
 }
 
 impl WatsonState {

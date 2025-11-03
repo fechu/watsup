@@ -1,0 +1,18 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+[
+  {
+    "request": "launch",
+    "label": "watson start",
+    "program": "$ZED_WORKTREE_ROOT/target/debug/watsup",
+    "build": {
+      "command": "cargo",
+      "args": ["build"]
+    },
+    "adapter": "CodeLLDB",
+    "sourceLanguages": ["rust"],
+    "args": ["start", "foo"]
+  }
+]

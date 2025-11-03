@@ -40,27 +40,35 @@ fn main() {
     let config = config::Config::default();
 
     let result = match &cli.command {
-        Some(Commands::Start { project, tags }) => start_project(project, tags, &config),
-        Some(Commands::Stop) => {
-            match WatsonState::load(&config.get_state_path()) {
-                None => Err(String::from("No project started")),
-                Some(state) => {
-                    let mut frame = Frame::from(state);
-                    let completed_frame = frame.set_end(chrono::Local::now());
-                    // TODO: Load the frame store properly
-                    let mut frame_store = CompletedFrameStore::default();
-                    frame_store.add_frame(completed_frame);
-                    match frame_store.save(&config.get_frames_path()) {
-                        Err(e) => Err(e.to_string()),
-                        Ok(_) => {
-                            reset_state(&config.get_state_path());
-                            log::info!("Frame stopped");
-                            Ok(())
-                        }
+        Some(Commands::Start { project, tags }) => {
+            if WatsonState::is_frame_ongoing() {
+                Err(String::from("A frame is already ongoing"))
+            } else {
+                start_project(project, tags, &config)
+            }
+        }
+        Some(Commands::Stop) => match WatsonState::load(&config.get_state_path()) {
+            None => Err(String::from("No project started")),
+            Some(state) => {
+                let mut frame = Frame::from(state);
+                let completed_frame = frame.set_end(chrono::Local::now());
+                let frame_project = completed_frame.frame().project().clone();
+                let frame_start = completed_frame.frame().start().clone();
+                let mut frame_store = CompletedFrameStore::default();
+                frame_store.add_frame(completed_frame);
+                match frame_store.save(&config.get_frames_path()) {
+                    Err(e) => Err(e.to_string()),
+                    Ok(_) => {
+                        reset_state(&config.get_state_path());
+                        println!(
+                            "Stopping project {}, started {}",
+                            frame_project, frame_start
+                        );
+                        Ok(())
                     }
                 }
             }
-        }
+        },
         Some(Commands::Projects) => {
             let frame_store = CompletedFrameStore::load(&config.get_frames_path()).unwrap();
             let projects = frame_store.get_projects();

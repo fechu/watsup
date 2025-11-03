@@ -82,6 +82,14 @@ impl Frame {
         self.end = Some(end);
         CompletedFrame::from_frame(self.clone()).unwrap()
     }
+
+    pub fn project(&self) -> &NonEmptyString {
+        &self.project
+    }
+
+    pub(crate) fn start(&self) -> &chrono::DateTime<chrono::Local> {
+        &self.start
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -106,6 +114,10 @@ impl CompletedFrame {
             Some(_) => Some(CompletedFrame(frame)),
             None => None,
         }
+    }
+
+    pub fn frame(&self) -> &Frame {
+        &self.0
     }
 
     fn as_watson_json(&self) -> Value {
@@ -268,5 +280,15 @@ impl WatsonState {
             Ok(state) => Some(state),
             Err(_) => None,
         }
+    }
+
+    pub fn is_frame_ongoing() -> bool {
+        let state = Self::load_default();
+        state.is_some()
+    }
+
+    fn load_default() -> Option<Self> {
+        let default_state_file = Config::default().get_state_path();
+        Self::load(&default_state_file)
     }
 }

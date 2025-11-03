@@ -1,4 +1,5 @@
 use clap::{CommandFactory, Parser, Subcommand};
+mod common;
 mod config;
 mod frame;
 use frame::CompletedFrameStore;
@@ -6,8 +7,8 @@ use frame::Frame;
 use frame::WatsonState;
 use simple_logger::SimpleLogger;
 
+use crate::common::NonEmptyString;
 use crate::config::Config;
-use crate::frame::NonEmptyString;
 use crate::frame::reset_state;
 
 #[derive(Parser)]

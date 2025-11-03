@@ -1,5 +1,4 @@
 use std::{
-    fmt::{self, Display},
     fs::File,
     hash::{DefaultHasher, Hasher},
     io::{Read, Write},
@@ -10,7 +9,7 @@ use chrono::{Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::config::Config;
+use crate::{common::NonEmptyString, config::Config};
 
 #[derive(Debug, Clone)]
 /// Represents a frame associated with a specific project.
@@ -82,29 +81,6 @@ impl Frame {
     pub fn set_end(&mut self, end: chrono::DateTime<chrono::Local>) -> CompletedFrame {
         self.end = Some(end);
         CompletedFrame::from_frame(self.clone()).unwrap()
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct NonEmptyString(String);
-
-impl NonEmptyString {
-    pub fn new(t: &str) -> Option<Self> {
-        if t.is_empty() {
-            None
-        } else {
-            Some(Self(t.to_string()))
-        }
-    }
-
-    pub fn to_string(&self) -> String {
-        self.0.clone()
-    }
-}
-
-impl Display for NonEmptyString {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 

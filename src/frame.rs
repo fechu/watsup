@@ -7,9 +7,14 @@ use std::{
 
 use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 
-use crate::{common::NonEmptyString, config::Config};
+use crate::{
+    common::NonEmptyString,
+    config::Config,
+    frame,
+    watson::{self},
+};
 
 #[derive(Debug, Clone)]
 /// Represents a frame associated with a specific project.
@@ -45,17 +50,20 @@ fn generate_id() -> String {
 
 impl Frame {
     pub fn new(
-        name: NonEmptyString,
-        tags: Vec<NonEmptyString>,
+        project: NonEmptyString,
+        id: Option<String>,
         start: Option<chrono::DateTime<Local>>,
+        end: Option<chrono::DateTime<Local>>,
+        tags: Vec<NonEmptyString>,
+        last_edit: Option<chrono::DateTime<Local>>,
     ) -> Self {
         Frame {
-            project: name,
-            id: generate_id(),
+            project,
+            id: id.unwrap_or(generate_id()),
             start: start.unwrap_or(chrono::Local::now()),
-            end: None,
+            end: end,
             tags: tags,
-            last_edit: chrono::Local::now(),
+            last_edit: last_edit.unwrap_or(chrono::Local::now()),
         }
     }
 
@@ -94,6 +102,18 @@ impl Frame {
     pub(crate) fn start(&self) -> &chrono::DateTime<chrono::Local> {
         &self.start
     }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn tags(&self) -> &[NonEmptyString] {
+        &self.tags
+    }
+
+    pub fn last_edit(&self) -> DateTime<Local> {
+        self.last_edit
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -109,7 +129,7 @@ pub struct FrameEdit {
     tags: Vec<NonEmptyString>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompletedFrame(Frame);
 
 impl CompletedFrame {
@@ -127,69 +147,6 @@ impl CompletedFrame {
     pub fn end(&self) -> DateTime<Local> {
         self.0.end.unwrap()
     }
-
-    fn as_watson_json(&self) -> Value {
-        json!([
-            self.0.start.timestamp(),
-            self.0
-                .end
-                .expect("CompletedFrame needs to have an end time")
-                .timestamp(),
-            self.0.project,
-            self.0.id,
-            self.0
-                .tags
-                .iter()
-                .map(|tag| tag.to_string())
-                .collect::<Vec<_>>(),
-            self.0.last_edit.timestamp(),
-        ])
-    }
-
-    fn from_watson_json(json: &Value) -> Result<CompletedFrame, String> {
-        let array = json
-            .as_array()
-            .ok_or("Encountered unexpected watson frame format")?;
-
-        let start = array[0].as_i64().ok_or("Invalid start time")?;
-        let end = array[1].as_i64().ok_or("Invalid end time")?;
-        let project = NonEmptyString::new(array[2].as_str().ok_or("Invalid project name")?)
-            .expect("Invalid project name");
-        let id = array[3].as_str().ok_or("Invalid frame ID")?;
-        let tags = array[4]
-            .as_array()
-            .ok_or("Invalid tags")?
-            .iter()
-            .filter_map(|s| NonEmptyString::new(&s.to_string()))
-            .collect::<Vec<_>>();
-        let last_edit = array[5].as_i64().ok_or("Invalid last edit time")?;
-
-        let start_time = Local
-            .timestamp_opt(start, 0)
-            .earliest()
-            .ok_or("Failed to parse start time")?;
-
-        let end_time = Local
-            .timestamp_opt(end, 0)
-            .latest()
-            .ok_or("Failed to parse end time")?;
-
-        let last_edit = Local
-            .timestamp_opt(last_edit, 0)
-            .earliest()
-            .ok_or("Failed to parse last edit")?;
-
-        Ok(CompletedFrame {
-            0: Frame {
-                start: start_time,
-                end: Some(end_time),
-                project: project,
-                id: id.to_string(),
-                tags,
-                last_edit: last_edit,
-            },
-        })
-    }
 }
 
 pub struct CompletedFrameStore {
@@ -201,19 +158,17 @@ impl CompletedFrameStore {
      * Load a CompletedFrameStore from a file
      */
     pub fn load(path: &PathBuf) -> Result<Self, String> {
-        let json = std::fs::read_to_string(path).unwrap();
-
-        let frames: Value = serde_json::from_str(&json).unwrap();
-        match frames {
-            Value::Array(frames) => {
-                let f = frames
-                    .iter()
-                    .filter_map(|frame| CompletedFrame::from_watson_json(frame).ok())
-                    .collect();
-                Ok(Self { frames: f })
-            }
-            _ => Err(String::from("Expected an array of frames in file")),
+        if !path.exists() {
+            return Ok(CompletedFrameStore { frames: Vec::new() });
         }
+
+        let json = std::fs::read_to_string(path).unwrap();
+        let frames: Vec<watson::Frame> = serde_json::from_str(&json).unwrap();
+        let frames = frames
+            .into_iter()
+            .map(|frame| CompletedFrame::from(frame))
+            .collect();
+        Ok(CompletedFrameStore { frames })
     }
 
     pub fn add_frame(&mut self, frame: CompletedFrame) {
@@ -224,8 +179,8 @@ impl CompletedFrameStore {
         let json_array = json!(
             self.frames
                 .iter()
-                .map(|frame| frame.as_watson_json())
-                .collect::<Vec<_>>()
+                .map(|frame| frame.clone().into())
+                .collect::<Vec<watson::Frame>>()
         );
         let json = serde_json::to_string_pretty(&json_array).unwrap();
         std::fs::write(store_path, json)?;
@@ -264,7 +219,7 @@ pub struct WatsonState {
 }
 
 impl WatsonState {
-    pub fn from(frame: Frame) -> Self {
+    pub fn from(frame: frame::Frame) -> Self {
         Self {
             project: frame.project,
             start: frame.start.timestamp(),

@@ -2,6 +2,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 mod common;
 mod config;
 mod frame;
+mod watson;
 use frame::CompletedFrameStore;
 use frame::Frame;
 use frame::WatsonState;
@@ -118,7 +119,7 @@ fn start_project(
         }
         false => chrono::Local::now(),
     };
-    let frame = Frame::new(project.clone(), tags, Some(start));
+    let frame = Frame::new(project.clone(), None, Some(start), None, tags, None);
     log::debug!("Starting frame. frame={:?}", frame);
 
     // Write the frame to file

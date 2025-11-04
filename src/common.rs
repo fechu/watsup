@@ -12,9 +12,11 @@ impl NonEmptyString {
             Some(Self(t.to_string()))
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        self.0.clone()
+impl From<NonEmptyString> for String {
+    fn from(value: NonEmptyString) -> Self {
+        value.0
     }
 }
 

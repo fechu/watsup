@@ -224,13 +224,13 @@ impl WatsonState {
         }
     }
 
-    pub fn is_frame_ongoing() -> bool {
-        let state = Self::load_default();
-        state.is_some()
-    }
-
     fn load_default() -> Option<Self> {
         let default_state_file = Config::default().get_state_path();
         Self::load(&default_state_file)
+    }
+
+    pub fn is_frame_ongoing() -> bool {
+        let state = Self::load_default();
+        state.is_some()
     }
 }

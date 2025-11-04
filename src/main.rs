@@ -5,8 +5,8 @@ mod frame;
 mod watson;
 use frame::CompletedFrameStore;
 use frame::Frame;
-use frame::WatsonState;
 use simple_logger::SimpleLogger;
+use watson::State;
 
 use crate::common::NonEmptyString;
 use crate::config::Config;
@@ -49,13 +49,13 @@ fn main() {
             tags,
             no_gap,
         }) => {
-            if WatsonState::is_frame_ongoing() {
+            if State::is_frame_ongoing() {
                 Err(String::from("A frame is already ongoing"))
             } else {
                 start_project(project, tags, no_gap, &config)
             }
         }
-        Some(Commands::Stop) => match WatsonState::load(&config.get_state_path()) {
+        Some(Commands::Stop) => match State::load(&config.get_state_path()) {
             None => Err(String::from("No project started")),
             Some(state) => {
                 let mut frame = Frame::from(state);
@@ -123,7 +123,7 @@ fn start_project(
     log::debug!("Starting frame. frame={:?}", frame);
 
     // Write the frame to file
-    let state = WatsonState::from(frame);
+    let state = State::from(frame);
     let result = state
         .save(&config.get_state_path())
         .map_err(|e| e.to_string());

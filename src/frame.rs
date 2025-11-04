@@ -1,19 +1,17 @@
 use std::{
     fs::File,
     hash::{DefaultHasher, Hasher},
-    io::{Read, Write},
+    io::Write,
     path::PathBuf,
 };
 
 use chrono::{DateTime, Local, TimeZone};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
     common::NonEmptyString,
     config::Config,
-    frame,
-    watson::{self},
+    watson::{self, State},
 };
 
 #[derive(Debug, Clone)]
@@ -67,13 +65,13 @@ impl Frame {
         }
     }
 
-    pub fn from(state: WatsonState) -> Self {
+    pub fn from(state: State) -> Self {
         Frame {
-            project: state.project,
+            project: state.project().clone(),
             id: generate_id(),
-            start: chrono::Local.timestamp_opt(state.start, 0).unwrap(),
+            start: chrono::Local.timestamp_opt(state.start(), 0).unwrap(),
             end: None,
-            tags: state.tags,
+            tags: state.tags().into(),
             last_edit: chrono::Local::now(),
         }
     }
@@ -184,53 +182,4 @@ impl Default for CompletedFrameStore {
 pub fn reset_state(path: &PathBuf) {
     let mut file = File::create(path).expect("Cannot write state file");
     file.write(b"{}").expect("Cannot write state file");
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct WatsonState {
-    project: NonEmptyString,
-    start: i64,
-    tags: Vec<NonEmptyString>,
-}
-
-impl WatsonState {
-    pub fn from(frame: frame::Frame) -> Self {
-        Self {
-            project: frame.project,
-            start: frame.start.timestamp(),
-            tags: frame.tags,
-        }
-    }
-
-    pub fn save(&self, path: &PathBuf) -> Result<(), std::io::Error> {
-        let mut file = File::create(path)?;
-        serde_json::to_writer(&mut file, self)?;
-        Ok(())
-    }
-
-    pub fn load(path: &PathBuf) -> Option<WatsonState> {
-        let mut file = match File::open(path) {
-            Ok(file) => file,
-            Err(_) => return None,
-        };
-        let mut contents = String::new();
-        match file.read_to_string(&mut contents) {
-            Ok(_) => (),
-            Err(_) => return None,
-        };
-        match serde_json::from_str(&contents) {
-            Ok(state) => Some(state),
-            Err(_) => None,
-        }
-    }
-
-    fn load_default() -> Option<Self> {
-        let default_state_file = Config::default().get_state_path();
-        Self::load(&default_state_file)
-    }
-
-    pub fn is_frame_ongoing() -> bool {
-        let state = Self::load_default();
-        state.is_some()
-    }
 }

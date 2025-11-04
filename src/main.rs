@@ -26,6 +26,9 @@ enum Commands {
         project: String,
         /// Tags to associate with the frame
         tags: Vec<String>,
+        /// Set the start time of the frame to the end time of the previous frame
+        #[arg(short, long)]
+        no_gap: bool,
     },
     /// Stop the current frame
     Stop,
@@ -40,11 +43,15 @@ fn main() {
     let config = config::Config::default();
 
     let result = match &cli.command {
-        Some(Commands::Start { project, tags }) => {
+        Some(Commands::Start {
+            project,
+            tags,
+            no_gap,
+        }) => {
             if WatsonState::is_frame_ongoing() {
                 Err(String::from("A frame is already ongoing"))
             } else {
-                start_project(project, tags, &config)
+                start_project(project, tags, no_gap, &config)
             }
         }
         Some(Commands::Stop) => match WatsonState::load(&config.get_state_path()) {
@@ -89,13 +96,29 @@ fn main() {
     };
 }
 
-fn start_project(project: &str, tags: &[String], config: &Config) -> Result<(), String> {
+fn start_project(
+    project: &str,
+    tags: &[String],
+    no_gap: &bool,
+    config: &Config,
+) -> Result<(), String> {
     let project = NonEmptyString::new(&project.to_string()).ok_or("Invalid project name")?;
     let tags = tags
         .iter()
         .filter_map(|tag| NonEmptyString::new(tag))
         .collect();
-    let frame = Frame::new(project.clone(), tags);
+    let start = match no_gap {
+        true => {
+            log::debug!("--no_gap given, finding last end time");
+            let store = CompletedFrameStore::default();
+            match store.get_last_frame() {
+                Some(frame) => frame.end(),
+                None => chrono::Local::now(),
+            }
+        }
+        false => chrono::Local::now(),
+    };
+    let frame = Frame::new(project.clone(), tags, Some(start));
     log::debug!("Starting frame. frame={:?}", frame);
 
     // Write the frame to file

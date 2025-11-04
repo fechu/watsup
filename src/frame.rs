@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use chrono::{Local, TimeZone};
+use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -44,11 +44,15 @@ fn generate_id() -> String {
 }
 
 impl Frame {
-    pub fn new(name: NonEmptyString, tags: Vec<NonEmptyString>) -> Self {
+    pub fn new(
+        name: NonEmptyString,
+        tags: Vec<NonEmptyString>,
+        start: Option<chrono::DateTime<Local>>,
+    ) -> Self {
         Frame {
             project: name,
             id: generate_id(),
-            start: chrono::Local::now(),
+            start: start.unwrap_or(chrono::Local::now()),
             end: None,
             tags: tags,
             last_edit: chrono::Local::now(),
@@ -118,6 +122,10 @@ impl CompletedFrame {
 
     pub fn frame(&self) -> &Frame {
         &self.0
+    }
+
+    pub fn end(&self) -> DateTime<Local> {
+        self.0.end.unwrap()
     }
 
     fn as_watson_json(&self) -> Value {
@@ -226,6 +234,10 @@ impl CompletedFrameStore {
 
     pub fn get_projects(&self) -> Vec<NonEmptyString> {
         self.frames.iter().map(|f| f.0.project.clone()).collect()
+    }
+
+    pub fn get_last_frame(&self) -> Option<&CompletedFrame> {
+        self.frames.last()
     }
 }
 

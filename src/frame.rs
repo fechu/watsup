@@ -78,18 +78,6 @@ impl Frame {
         }
     }
 
-    // pub fn edit_frame(&self) -> FrameEdit {
-    //     FrameEdit {
-    //         project: self.project.clone(),
-    //         start: self.start.timestamp(),
-    //         end: match self.end {
-    //             Some(end) => Some(end.timestamp()),
-    //             None => None,
-    //         },
-    //         tags: self.tags.clone(),
-    //     }
-    // }
-
     pub fn set_end(&mut self, end: chrono::DateTime<chrono::Local>) -> CompletedFrame {
         self.end = Some(end);
         CompletedFrame::from_frame(self.clone()).unwrap()
@@ -114,19 +102,6 @@ impl Frame {
     pub fn last_edit(&self) -> DateTime<Local> {
         self.last_edit
     }
-}
-
-#[derive(Serialize, Deserialize)]
-/// Structure that represents a frame during editing.
-pub struct FrameEdit {
-    /// Name of the project
-    project: String,
-    /// Start time as unix timestamp
-    start: i64,
-    /// End time as unix timestamp
-    end: Option<i64>,
-    /// Tags associated with the frame
-    tags: Vec<NonEmptyString>,
 }
 
 #[derive(Debug, Clone)]

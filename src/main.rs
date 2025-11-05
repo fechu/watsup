@@ -33,6 +33,8 @@ enum Commands {
     },
     /// Stop the current frame
     Stop,
+    /// Cancel the current frame
+    Cancel,
     /// List all projects
     Projects,
 }
@@ -75,6 +77,14 @@ fn main() {
                         Ok(())
                     }
                 }
+            }
+        },
+        Some(Commands::Cancel) => match State::load(&config.get_state_path()) {
+            None => Err(String::from("No project started")),
+            Some(state) => {
+                println!("Canceling the timer for project {}", state.project());
+                reset_state(&config.get_state_path());
+                Ok(())
             }
         },
         Some(Commands::Projects) => {

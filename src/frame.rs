@@ -14,6 +14,13 @@ use crate::{
     watson::{self, State},
 };
 
+fn generate_id() -> String {
+    // Generate a unique ID for the frame using a hash of the current time.
+    let mut hasher = DefaultHasher::new();
+    hasher.write(chrono::Local::now().to_string().as_bytes());
+    format!("{:x}", hasher.finish())
+}
+
 #[derive(Debug, Clone)]
 /// Represents a frame associated with a specific project.
 ///
@@ -37,13 +44,6 @@ pub struct Frame {
 
     /// The last time the frame was edited.
     last_edit: chrono::DateTime<chrono::Local>,
-}
-
-fn generate_id() -> String {
-    // Generate a unique ID for the frame using a hash of the current time.
-    let mut hasher = DefaultHasher::new();
-    hasher.write(chrono::Local::now().to_string().as_bytes());
-    format!("{:x}", hasher.finish())
 }
 
 impl Frame {
@@ -102,6 +102,8 @@ impl Frame {
     }
 }
 
+/// Represents a completed frame.
+/// A completed frame is guaranteed to have an end time.
 #[derive(Debug, Clone)]
 pub struct CompletedFrame(Frame);
 

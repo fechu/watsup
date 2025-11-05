@@ -1,7 +1,5 @@
 use std::{
-    fs::File,
     hash::{DefaultHasher, Hasher},
-    io::Write,
     path::PathBuf,
 };
 
@@ -179,9 +177,4 @@ impl Default for CompletedFrameStore {
         let config = Config::default();
         CompletedFrameStore::load(&config.get_frames_path()).expect("Failed to read frames store")
     }
-}
-
-pub fn reset_state(path: &PathBuf) {
-    let mut file = File::create(path).expect("Cannot write state file");
-    file.write(b"{}").expect("Cannot write state file");
 }

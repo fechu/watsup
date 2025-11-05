@@ -10,7 +10,7 @@ use watson::State;
 
 use crate::common::NonEmptyString;
 use crate::config::Config;
-use crate::frame::reset_state;
+use crate::watson::reset_state;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

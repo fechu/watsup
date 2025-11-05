@@ -1,7 +1,11 @@
 // The compatiblity layer to watson (https://github.com/jazzband/Watson/)
 //
 
-use std::{fs::File, io::Read, path::PathBuf};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+};
 
 use chrono::TimeZone;
 use serde::{Deserialize, Serialize, ser::SerializeSeq};
@@ -300,4 +304,9 @@ impl State {
     pub fn tags(&self) -> &[NonEmptyString] {
         &self.tags
     }
+}
+
+pub fn reset_state(path: &PathBuf) {
+    let mut file = File::create(path).expect("Cannot write state file");
+    file.write(b"{}").expect("Cannot write state file");
 }

@@ -130,13 +130,13 @@ impl CompletedFrameStore {
     /**
      * Load a CompletedFrameStore from a file
      */
-    pub fn load(path: &PathBuf) -> Result<Self, String> {
+    pub fn load(path: &PathBuf) -> Result<Self, std::io::Error> {
         if !path.exists() {
             return Ok(CompletedFrameStore { frames: Vec::new() });
         }
 
-        let json = std::fs::read_to_string(path).unwrap();
-        let frames: Vec<watson::Frame> = serde_json::from_str(&json).unwrap();
+        let json = std::fs::read_to_string(path)?;
+        let frames: Vec<watson::Frame> = serde_json::from_str(&json)?;
         let frames = frames
             .into_iter()
             .map(|frame| CompletedFrame::from(frame))

@@ -106,6 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // First see if we have a current frame
             let mut frame =
                 State::load(&config.get_state_path()).and_then(|s| Some(Frame::from(s)));
+            // TODO: Make this nicer. This bool should not be necessary!
             let is_ongoing = frame.is_some();
             if frame.is_none() {
                 // If no ongoing frame, take the last frame

@@ -1,6 +1,5 @@
 use std::env;
 use std::fs::File;
-use std::io::Write;
 use std::process::Command;
 
 use clap::{CommandFactory, Parser, Subcommand};
@@ -15,6 +14,8 @@ use watson::State;
 
 use crate::common::NonEmptyString;
 use crate::config::Config;
+use crate::frame::CompletedFrame;
+use crate::watson::FrameEdit;
 use crate::watson::reset_state;
 
 #[derive(Parser)]
@@ -105,6 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // First see if we have a current frame
             let mut frame =
                 State::load(&config.get_state_path()).and_then(|s| Some(Frame::from(s)));
+            let is_ongoing = frame.is_some();
             if frame.is_none() {
                 // If no ongoing frame, take the last frame
                 frame = frame_store
@@ -112,22 +114,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .and_then(|f| Some(f.frame().clone()))
             }
 
-            if let Some(f) = frame {
+            if let Some(mut f) = frame {
                 let editor = env::var_os("EDITOR")
                     .ok_or("Cannot launch editor. $EDITOR environment variable not set")?;
 
                 let tmp_file_path = std::env::temp_dir().join("watsup.tmp");
-                let mut tmp_file = File::create(&tmp_file_path)?;
-                writeln!(tmp_file, "hello {}", "world")?;
+                let tmp_file_write = File::create(&tmp_file_path)?;
+                let frame_edit = watson::FrameEdit::from(&f);
+                serde_json::to_writer_pretty(tmp_file_write, &frame_edit)?;
                 log::debug!(
                     "Starting editor for editing frame. editor={:?} frame_id={}",
                     editor,
                     f.id()
                 );
-                let exit_status = Command::new(editor).arg(tmp_file_path).status()?;
+                let exit_status = Command::new(editor).arg(&tmp_file_path).status()?;
+                let tmp_file_read = File::open(&tmp_file_path)?;
+                let updated_frame_edit: FrameEdit = serde_json::from_reader(tmp_file_read)?;
                 log::debug!("Editor exited. exit_status={:?}", exit_status);
                 if exit_status.success() {
                     // TODO: Save the updated frame
+                    f.update_from(updated_frame_edit);
+                    log::debug!(
+                        "Updated frame successfully. Writing updates to disk. frame={:?}",
+                        f
+                    );
+
+                    if is_ongoing {
+                        State::from(f).save(&config.get_state_path())?;
+                        log::debug!("Updated ongoing state")
+                    } else {
+                        let completed_frame = CompletedFrame::from_frame(f).unwrap();
+                        frame_store.insert_or_update_frame(completed_frame.clone());
+                        frame_store.save(&config.get_frames_path())?;
+                        log::debug!("Updated completed frame store. frame={:?}", completed_frame)
+                    }
+
                     Ok(())
                 } else {
                     Err(String::from(

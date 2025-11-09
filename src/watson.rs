@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
 };
 
-use chrono::TimeZone;
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use serde::{Deserialize, Serialize, ser::SerializeSeq};
 
 use crate::{
@@ -309,4 +309,51 @@ impl State {
 pub fn reset_state(path: &PathBuf) {
     let mut file = File::create(path).expect("Cannot write state file");
     file.write(b"{}").expect("Cannot write state file");
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+/// Frame representation used for editing a frame
+pub struct FrameEdit {
+    project: NonEmptyString,
+    start: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop: Option<String>,
+    tags: Vec<NonEmptyString>,
+}
+
+impl FrameEdit {
+    pub fn project(&self) -> &NonEmptyString {
+        &self.project
+    }
+
+    pub fn start(&self) -> DateTime<Local> {
+        let naive = NaiveDateTime::parse_from_str(&self.start, EDIT_DATETIME_FORMAT).unwrap();
+        naive.and_local_timezone(Local).single().unwrap()
+    }
+
+    pub fn stop(&self) -> Option<DateTime<Local>> {
+        self.stop
+            .clone()
+            .map(|s| NaiveDateTime::parse_from_str(&s, EDIT_DATETIME_FORMAT).unwrap())
+            .map(|d| d.and_local_timezone(Local).unwrap())
+    }
+
+    pub fn tags(&self) -> &[NonEmptyString] {
+        &self.tags
+    }
+}
+
+const EDIT_DATETIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
+impl From<&frame::Frame> for FrameEdit {
+    fn from(frame: &frame::Frame) -> Self {
+        FrameEdit {
+            project: frame.project().clone(),
+            start: frame.start().format(EDIT_DATETIME_FORMAT).to_string(),
+            stop: frame
+                .end()
+                .and_then(|e| Some(e.format(EDIT_DATETIME_FORMAT).to_string())),
+            tags: Vec::from(frame.tags()),
+        }
+    }
 }

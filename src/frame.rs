@@ -79,6 +79,14 @@ impl Frame {
         CompletedFrame::from_frame(self.clone()).unwrap()
     }
 
+    pub fn update_from(&mut self, edit: watson::FrameEdit) {
+        self.project = edit.project().clone();
+        self.start = edit.start();
+        self.end = edit.stop();
+        self.tags = Vec::from(edit.tags());
+        self.last_edit = chrono::Local::now();
+    }
+
     pub fn project(&self) -> &NonEmptyString {
         &self.project
     }
@@ -97,6 +105,10 @@ impl Frame {
 
     pub fn last_edit(&self) -> DateTime<Local> {
         self.last_edit
+    }
+
+    pub fn end(&self) -> &Option<DateTime<Local>> {
+        &self.end
     }
 }
 
@@ -148,6 +160,11 @@ impl CompletedFrameStore {
         self.frames.push(frame);
     }
 
+    pub fn insert_or_update_frame(&mut self, frame: CompletedFrame) {
+        self.frames.retain(|f| f.0.id != frame.0.id);
+        self.add_frame(frame);
+    }
+
     pub fn save(&self, store_path: &PathBuf) -> Result<(), std::io::Error> {
         let json_array = json!(
             self.frames
@@ -155,6 +172,7 @@ impl CompletedFrameStore {
                 .map(|frame| frame.clone().into())
                 .collect::<Vec<watson::Frame>>()
         );
+        log::debug!("Writing to frames store. frame_count={}", self.frames.len());
         let json = serde_json::to_string_pretty(&json_array).unwrap();
         std::fs::write(store_path, json)?;
         Ok(())

@@ -1,3 +1,8 @@
+use std::env;
+use std::fs::File;
+use std::io::Write;
+use std::process::Command;
+
 use clap::{CommandFactory, Parser, Subcommand};
 mod common;
 mod config;
@@ -35,15 +40,18 @@ enum Commands {
     Stop,
     /// Cancel the current frame
     Cancel,
+    /// Edit a frame
+    Edit,
     /// List all projects
     Projects,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     SimpleLogger::new().env().init().unwrap();
 
     let cli = Cli::parse();
     let config = config::Config::default();
+    let mut frame_store = CompletedFrameStore::load(&config.get_frames_path())?;
 
     let result = match &cli.command {
         Some(Commands::Start {
@@ -54,7 +62,7 @@ fn main() {
             if State::is_frame_ongoing() {
                 Err(String::from("A frame is already ongoing"))
             } else {
-                start_project(project, tags, no_gap, &config)
+                start_project(project, tags, no_gap, &config, &frame_store)
             }
         }
         Some(Commands::Stop) => match State::load(&config.get_state_path()) {
@@ -64,7 +72,6 @@ fn main() {
                 let completed_frame = frame.set_end(chrono::Local::now());
                 let frame_project = completed_frame.frame().project().clone();
                 let frame_start = completed_frame.frame().start().clone();
-                let mut frame_store = CompletedFrameStore::default();
                 frame_store.add_frame(completed_frame);
                 match frame_store.save(&config.get_frames_path()) {
                     Err(e) => Err(e.to_string()),
@@ -88,12 +95,48 @@ fn main() {
             }
         },
         Some(Commands::Projects) => {
-            let frame_store = CompletedFrameStore::load(&config.get_frames_path()).unwrap();
             let projects = frame_store.get_projects();
             for project in projects {
                 println!("{}", project);
             }
             Ok(())
+        }
+        Some(Commands::Edit) => {
+            // First see if we have a current frame
+            let mut frame =
+                State::load(&config.get_state_path()).and_then(|s| Some(Frame::from(s)));
+            if frame.is_none() {
+                // If no ongoing frame, take the last frame
+                frame = frame_store
+                    .get_last_frame()
+                    .and_then(|f| Some(f.frame().clone()))
+            }
+
+            if let Some(f) = frame {
+                let editor = env::var_os("EDITOR")
+                    .ok_or("Cannot launch editor. $EDITOR environment variable not set")?;
+
+                let tmp_file_path = std::env::temp_dir().join("watsup.tmp");
+                let mut tmp_file = File::create(&tmp_file_path)?;
+                writeln!(tmp_file, "hello {}", "world")?;
+                log::debug!(
+                    "Starting editor for editing frame. editor={:?} frame_id={}",
+                    editor,
+                    f.id()
+                );
+                let exit_status = Command::new(editor).arg(tmp_file_path).status()?;
+                log::debug!("Editor exited. exit_status={:?}", exit_status);
+                if exit_status.success() {
+                    // TODO: Save the updated frame
+                    Ok(())
+                } else {
+                    Err(String::from(
+                        "There was a problem with the editor. Aborting editing...",
+                    ))
+                }
+            } else {
+                Err(String::from("No frame to edit"))
+            }
         }
         None => Cli::command().print_help().map_err(|e| e.to_string()),
     };
@@ -105,6 +148,7 @@ fn main() {
         }
         _ => {}
     };
+    Ok(())
 }
 
 fn start_project(
@@ -112,6 +156,7 @@ fn start_project(
     tags: &[String],
     no_gap: &bool,
     config: &Config,
+    frame_store: &CompletedFrameStore,
 ) -> Result<(), String> {
     let project = NonEmptyString::new(&project.to_string()).ok_or("Invalid project name")?;
     let tags = tags
@@ -121,8 +166,7 @@ fn start_project(
     let start = match no_gap {
         true => {
             log::debug!("--no_gap given, finding last end time");
-            let store = CompletedFrameStore::default();
-            match store.get_last_frame() {
+            match frame_store.get_last_frame() {
                 Some(frame) => frame.end(),
                 None => chrono::Local::now(),
             }

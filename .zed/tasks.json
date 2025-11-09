@@ -1,0 +1,14 @@
+[
+  {
+    "label": "watsup start",
+    "command": "cargo build && $ZED_WORKTREE_ROOT/target/debug/watsup start some-project-name"
+  },
+  {
+    "label": "watsup stop",
+    "command": "cargo build && $ZED_WORKTREE_ROOT/target/debug/watsup stop"
+  },
+  {
+    "label": "watsup edit",
+    "command": "cargo build && $ZED_WORKTREE_ROOT/target/debug/watsup edit"
+  }
+]

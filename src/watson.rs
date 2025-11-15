@@ -288,9 +288,9 @@ impl State {
         Self::load(&default_state_file)
     }
 
-    pub fn is_frame_ongoing() -> bool {
+    pub fn ongoing_project_name() -> Option<NonEmptyString> {
         let state = Self::load_default();
-        state.is_some()
+        state.and_then(|s| Some(s.project))
     }
 
     pub fn project(&self) -> &NonEmptyString {

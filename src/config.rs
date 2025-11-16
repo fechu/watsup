@@ -5,12 +5,6 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(storage_path: PathBuf) -> Self {
-        Self {
-            data_store: storage_path,
-        }
-    }
-
     pub fn get_state_path(&self) -> PathBuf {
         self.data_store.join("state")
     }
@@ -25,6 +19,15 @@ impl Default for Config {
         let home = PathBuf::from(env::var("HOME").unwrap());
         Self {
             data_store: home.join("Library/Application Support/watson"),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Config {
+    pub fn new(storage_path: PathBuf) -> Self {
+        Self {
+            data_store: storage_path,
         }
     }
 }

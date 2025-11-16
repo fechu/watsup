@@ -345,6 +345,7 @@ impl From<&frame::Frame> for FrameEdit {
     }
 }
 
+#[derive(Debug)]
 pub enum StoreError {
     OngoingFrameError,
     SerializationError(serde_json::Error),
@@ -468,17 +469,96 @@ impl FrameStore for Store {
 #[cfg(test)]
 mod store_tests {
     use super::*;
+    use frame::Frame;
+    use tempfile::TempDir;
 
-    fn get_test_config() -> Config {
-        let tmp_dir = std::env::temp_dir().join("watson_test");
-        std::fs::create_dir_all(&tmp_dir).expect("Failed to create temp dir");
+    struct TestConfig {
+        // Warning ignored as we need to keep ownership of tmp_dir because otherwise the tmp dir is removed again.
+        #[allow(dead_code)]
+        tmp_dir: TempDir,
+        config: Config,
+    }
 
-        Config::new(tmp_dir)
+    fn get_test_config() -> TestConfig {
+        let tmp_dir = tempfile::TempDir::new().expect("Failed to create tmp dir");
+
+        TestConfig {
+            config: Config::new(tmp_dir.path().into()),
+            tmp_dir: tmp_dir,
+        }
+    }
+
+    fn get_test_frame() -> Frame {
+        Frame::new(
+            NonEmptyString::new("project name").unwrap(),
+            None,
+            None,
+            None,
+            vec![],
+            None,
+        )
+    }
+
+    fn get_completed_test_frame() -> CompletedFrame {
+        let mut frame = get_test_frame();
+        frame.set_end(chrono::Local::now());
+        CompletedFrame::from_frame(frame).unwrap()
     }
 
     #[test]
     fn test_get_last_frame_with_no_frames_returns_none() {
-        let store = Store::new(get_test_config());
-        assert!(store.get_last_frame().is_none())
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        assert!(store.get_last_frame().is_none());
+    }
+
+    #[test]
+    fn test_get_last_frame() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let test_frame = get_completed_test_frame();
+        assert!(store.get_last_frame().is_none());
+        store
+            .save_frame(test_frame)
+            .expect("Saving test frame failed");
+
+        assert!(store.get_last_frame().is_some());
+    }
+
+    #[test]
+    fn test_has_no_ongoing_frame_by_default() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        assert!(store.get_ongoing_frame().is_none());
+    }
+
+    #[test]
+    fn test_has_ongoing_frame_after_storing_one() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let frame = get_test_frame();
+        assert!(store.get_ongoing_frame().is_none());
+        store
+            .save_ongoing_frame(frame)
+            .expect("Failed to save ongoing frame");
+        assert!(store.get_ongoing_frame().is_some());
+        assert!(store.has_ongoing_frame())
+    }
+
+    #[test]
+    fn test_clear_ongoing_frame() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let frame = get_test_frame();
+        store
+            .save_ongoing_frame(frame)
+            .expect("Failed to save ongoing frame");
+        assert!(store.get_ongoing_frame().is_some());
+        assert!(store.has_ongoing_frame());
+        store
+            .clear_ongoing_frame()
+            .expect("Failed to clear ongoing frame");
+        assert!(store.get_ongoing_frame().is_none());
+        assert!(!store.has_ongoing_frame());
     }
 }

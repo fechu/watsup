@@ -5,6 +5,12 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn new(storage_path: PathBuf) -> Self {
+        Self {
+            data_store: storage_path,
+        }
+    }
+
     pub fn get_state_path(&self) -> PathBuf {
         self.data_store.join("state")
     }

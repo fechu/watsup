@@ -6,14 +6,11 @@ use std::process::Command as ProcessCommand;
 use clap::{Parser, Subcommand};
 
 use crate::common::NonEmptyString;
-use crate::config::Config;
 use crate::frame::CompletedFrame;
-use crate::frame::CompletedFrameStore;
 use crate::frame::Frame;
+use crate::frame::FrameStore;
 use crate::watson;
 use crate::watson::FrameEdit;
-use crate::watson::State;
-use crate::watson::reset_state;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -45,10 +42,10 @@ pub enum Command {
 }
 
 #[derive(Debug, Clone)]
-pub enum CliError {
+pub enum CliError<E> {
     OngoingProject(NonEmptyString),
     InvalidProjectName,
-    FrameStoreError(String),
+    FrameStoreError(E),
     NoOngoingRecording,
     EditorNotSet,
     EditorError(String),
@@ -57,7 +54,7 @@ pub enum CliError {
     InvalidFrame(Option<String>),
 }
 
-impl Display for CliError {
+impl<E: Display> Display for CliError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CliError::OngoingProject(project) => {
@@ -96,23 +93,22 @@ impl Display for CliError {
 }
 
 /// The class responsible for executing commands
-pub struct CommandExecutor {
+pub struct CommandExecutor<T: FrameStore> {
     /// The place where frames are stored
-    frame_store: CompletedFrameStore,
-
-    /// TODO: Get rid of the config in this class, shouldn't be needed if we have a good FrameStore trait
-    config: Config,
+    frame_store: T,
 }
 
-impl CommandExecutor {
-    pub fn new(frame_store: CompletedFrameStore, config: Config) -> Self {
+impl<T: FrameStore> CommandExecutor<T> {
+    pub fn new(frame_store: T) -> Self {
         Self {
             frame_store: frame_store,
-            config: config,
         }
     }
 
-    pub fn execute_command(&mut self, command: &Command) -> Result<(), CliError> {
+    pub fn execute_command(
+        &mut self,
+        command: &Command,
+    ) -> Result<(), CliError<T::FrameStoreError>> {
         match command {
             Command::Start {
                 project,
@@ -126,8 +122,17 @@ impl CommandExecutor {
         }
     }
 
-    fn start(&self, project: &String, tags: &Vec<String>, no_gap: &bool) -> Result<(), CliError> {
-        if let Some(ongoing_project_name) = State::ongoing_project_name() {
+    fn start(
+        &self,
+        project: &String,
+        tags: &Vec<String>,
+        no_gap: &bool,
+    ) -> Result<(), CliError<T::FrameStoreError>> {
+        if let Some(ongoing_project_name) = self
+            .frame_store
+            .get_ongoing_frame()
+            .and_then(|f| Some(f.project().clone()))
+        {
             Err(CliError::OngoingProject(ongoing_project_name))
         } else {
             let project =
@@ -150,54 +155,56 @@ impl CommandExecutor {
             log::debug!("Starting frame. frame={:?}", frame);
 
             // Write the frame to file
-            let state = State::from(frame);
-            let result = state
-                .save(&self.config.get_state_path())
-                .map_err(|e| CliError::FrameStoreError(e.to_string()));
+            let result = self
+                .frame_store
+                .save_ongoing_frame(frame)
+                .map_err(CliError::FrameStoreError);
             println!("Project {} started", project);
             result
         }
     }
 
-    fn stop(&mut self) -> Result<(), CliError> {
-        match State::load(&self.config.get_state_path()) {
+    fn stop(&mut self) -> Result<(), CliError<T::FrameStoreError>> {
+        match &self.frame_store.get_ongoing_frame() {
             None => Err(CliError::NoOngoingRecording),
-            Some(state) => {
-                let mut frame = Frame::from(state);
+            Some(frame) => {
+                let mut frame = frame.clone();
                 let completed_frame = frame.set_end(chrono::Local::now());
                 let frame_project = completed_frame.frame().project().clone();
                 let frame_start = completed_frame.frame().start().clone();
-                self.frame_store.add_frame(completed_frame);
-                match self.frame_store.save(&self.config.get_frames_path()) {
-                    Err(e) => Err(CliError::FrameStoreError(e.to_string())),
+                match self.frame_store.save_frame(completed_frame) {
+                    Err(e) => Err(CliError::FrameStoreError(e)),
                     Ok(_) => {
-                        reset_state(&self.config.get_state_path());
+                        let result = self
+                            .frame_store
+                            .clear_ongoing_frame()
+                            .map_err(CliError::FrameStoreError);
                         println!(
                             "Stopping project {}, started {}",
                             frame_project, frame_start
                         );
-                        Ok(())
+                        result
                     }
                 }
             }
         }
     }
 
-    fn cancel(&self) -> Result<(), CliError> {
-        match State::load(&self.config.get_state_path()) {
+    fn cancel(&self) -> Result<(), CliError<T::FrameStoreError>> {
+        match &self.frame_store.get_ongoing_frame() {
             None => Err(CliError::NoOngoingRecording),
             Some(state) => {
                 println!("Canceling the timer for project {}", state.project());
-                reset_state(&self.config.get_state_path());
-                Ok(())
+                self.frame_store
+                    .clear_ongoing_frame()
+                    .map_err(CliError::FrameStoreError)
             }
         }
     }
 
-    fn edit(&mut self) -> Result<(), CliError> {
+    fn edit(&mut self) -> Result<(), CliError<T::FrameStoreError>> {
         // First see if we have a current frame
-        let mut frame =
-            State::load(&self.config.get_state_path()).and_then(|s| Some(Frame::from(s)));
+        let mut frame = self.frame_store.get_ongoing_frame();
         // TODO: Make this nicer. This bool should not be necessary!
         let is_ongoing = frame.is_some();
         if frame.is_none() {
@@ -240,21 +247,23 @@ impl CommandExecutor {
                 );
 
                 if is_ongoing {
-                    State::from(f)
-                        .save(&self.config.get_state_path())
-                        .map_err(|e| CliError::FrameStoreError(e.to_string()))?;
-                    log::debug!("Updated ongoing state")
+                    self.frame_store
+                        .clear_ongoing_frame()
+                        .map_err(CliError::FrameStoreError)?;
+                    log::debug!("Updating ongoing state");
+                    self.frame_store
+                        .save_ongoing_frame(f)
+                        .map_err(CliError::FrameStoreError)
                 } else {
                     let completed_frame = CompletedFrame::from_frame(f).unwrap();
+                    log::debug!(
+                        "Updating completed frame store. frame={:?}",
+                        completed_frame
+                    );
                     self.frame_store
-                        .insert_or_update_frame(completed_frame.clone());
-                    self.frame_store
-                        .save(&self.config.get_frames_path())
-                        .map_err(|e| CliError::FrameStoreError(e.to_string()))?;
-                    log::debug!("Updated completed frame store. frame={:?}", completed_frame)
+                        .save_frame(completed_frame)
+                        .map_err(CliError::FrameStoreError)
                 }
-
-                Ok(())
             } else {
                 Err(CliError::EditorError(format!(
                     "Editor exist status: {}",
@@ -266,8 +275,11 @@ impl CommandExecutor {
         }
     }
 
-    fn list_projects(&self) -> Result<(), CliError> {
-        let projects = self.frame_store.get_projects();
+    fn list_projects(&self) -> Result<(), CliError<T::FrameStoreError>> {
+        let projects = self
+            .frame_store
+            .get_projects()
+            .map_err(CliError::FrameStoreError)?;
         for project in projects {
             println!("{}", project);
         }

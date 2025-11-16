@@ -2,6 +2,7 @@
 //
 
 use std::{
+    fmt::Display,
     fs::File,
     io::{Read, Write},
     path::PathBuf,
@@ -9,11 +10,12 @@ use std::{
 
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use serde::{Deserialize, Serialize, ser::SerializeSeq};
+use serde_json::json;
 
 use crate::{
     common::NonEmptyString,
     config::Config,
-    frame::{self},
+    frame::{self, CompletedFrame, FrameStore},
 };
 
 #[derive(Clone)]
@@ -283,16 +285,6 @@ impl State {
         }
     }
 
-    fn load_default() -> Option<Self> {
-        let default_state_file = Config::default().get_state_path();
-        Self::load(&default_state_file)
-    }
-
-    pub fn ongoing_project_name() -> Option<NonEmptyString> {
-        let state = Self::load_default();
-        state.and_then(|s| Some(s.project))
-    }
-
     pub fn project(&self) -> &NonEmptyString {
         &self.project
     }
@@ -304,11 +296,6 @@ impl State {
     pub fn tags(&self) -> &[NonEmptyString] {
         &self.tags
     }
-}
-
-pub fn reset_state(path: &PathBuf) {
-    let mut file = File::create(path).expect("Cannot write state file");
-    file.write(b"{}").expect("Cannot write state file");
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -355,5 +342,143 @@ impl From<&frame::Frame> for FrameEdit {
                 .and_then(|e| Some(e.format(EDIT_DATETIME_FORMAT).to_string())),
             tags: Vec::from(frame.tags()),
         }
+    }
+}
+
+pub enum StoreError {
+    OngoingFrameError,
+    SerializationError(serde_json::Error),
+    IoError(std::io::Error),
+}
+
+impl Display for StoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreError::OngoingFrameError => write!(f, "Ongoing frame error"),
+            StoreError::SerializationError(e) => write!(f, "Serialization error: {}", e),
+            StoreError::IoError(e) => write!(f, "IO error: {}", e),
+        }
+    }
+}
+
+impl From<std::io::Error> for StoreError {
+    fn from(error: std::io::Error) -> Self {
+        StoreError::IoError(error)
+    }
+}
+
+impl From<serde_json::Error> for StoreError {
+    fn from(error: serde_json::Error) -> Self {
+        StoreError::SerializationError(error)
+    }
+}
+
+pub struct Store {
+    config: Config,
+}
+
+impl Store {
+    pub fn new(config: Config) -> Self {
+        Self { config }
+    }
+
+    /// Load the frames from the json file stored in the location from the config.
+    fn load(&self) -> Result<Vec<CompletedFrame>, StoreError> {
+        let frames_file_path = self.config.get_frames_path();
+        if !frames_file_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let json = std::fs::read_to_string(frames_file_path)?;
+        let frames: Vec<Frame> = serde_json::from_str(&json)?;
+        let frames = frames
+            .into_iter()
+            .map(|frame| CompletedFrame::from(frame))
+            .collect();
+        Ok(frames)
+    }
+
+    fn save(&self, frames: Vec<CompletedFrame>) -> Result<(), StoreError> {
+        let json_array = json!(
+            frames
+                .iter()
+                .map(|frame| frame.clone().into())
+                .collect::<Vec<Frame>>()
+        );
+        log::debug!("Writing to frames store. frame_count={}", frames.len());
+        let json = serde_json::to_string_pretty(&json_array)?;
+        std::fs::write(self.config.get_frames_path(), json)?;
+        Ok(())
+    }
+}
+
+impl FrameStore for Store {
+    type FrameStoreError = StoreError;
+
+    fn save_frame(
+        &self,
+        completed_frame: frame::CompletedFrame,
+    ) -> Result<(), Self::FrameStoreError> {
+        let mut frames = self.load()?;
+        frames.retain(|f| f.frame().id() != completed_frame.frame().id());
+        frames.push(completed_frame);
+        frames.sort();
+        self.save(frames)
+    }
+
+    fn get_projects(&self) -> Result<Vec<NonEmptyString>, Self::FrameStoreError> {
+        let projects = self
+            .load()?
+            .iter()
+            .map(|f| f.frame().project().clone())
+            .collect();
+        Ok(projects)
+    }
+
+    fn get_last_frame(&self) -> Option<frame::CompletedFrame> {
+        match self.load() {
+            Ok(frames) => frames.last().and_then(|f| Some(f.clone())),
+            Err(_) => None,
+        }
+    }
+
+    fn save_ongoing_frame(&self, frame: frame::Frame) -> Result<(), Self::FrameStoreError> {
+        if self.has_ongoing_frame() {
+            return Err(StoreError::OngoingFrameError);
+        }
+
+        let state = State::from(frame);
+        state
+            .save(&self.config.get_state_path())
+            .map_err(StoreError::IoError)
+    }
+
+    fn clear_ongoing_frame(&self) -> Result<(), Self::FrameStoreError> {
+        let mut file = File::create(self.config.get_state_path()).map_err(StoreError::IoError)?;
+        file.write_all(b"{}").map_err(StoreError::IoError)
+    }
+
+    fn get_ongoing_frame(&self) -> Option<frame::Frame> {
+        let state = State::load(&self.config.get_state_path());
+        let frame = state.and_then(|s| Some(frame::Frame::from(s)));
+        frame
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    fn get_test_config() -> Config {
+        let tmp_dir = std::env::temp_dir().join("watson_test");
+        std::fs::create_dir_all(&tmp_dir).expect("Failed to create temp dir");
+
+        Config::new(tmp_dir)
+    }
+
+    #[test]
+    fn test_get_last_frame_with_no_frames_returns_none() {
+        let store = Store::new(get_test_config());
+        assert!(store.get_last_frame().is_none())
     }
 }

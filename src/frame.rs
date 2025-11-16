@@ -1,14 +1,9 @@
-use std::{
-    hash::{DefaultHasher, Hasher},
-    path::PathBuf,
-};
+use std::hash::{DefaultHasher, Hasher};
 
 use chrono::{DateTime, Local, TimeZone};
-use serde_json::json;
 
 use crate::{
     common::NonEmptyString,
-    config::Config,
     watson::{self, State},
 };
 
@@ -134,19 +129,39 @@ impl CompletedFrame {
     }
 }
 
+impl Ord for CompletedFrame {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.start().cmp(&other.0.start())
+    }
+}
+
+impl PartialOrd for CompletedFrame {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for CompletedFrame {}
+
+impl PartialEq for CompletedFrame {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.start() == other.0.start()
+    }
+}
+
 pub trait FrameStore {
     type FrameStoreError;
 
     /// Save a frame to the store.
     /// If the frame already exists (identified by "id") it will be updated, otherwise inserted.
     /// Returns an error if the saving failed.
-    fn save_frame(frame: CompletedFrame) -> Result<(), Self::FrameStoreError>;
+    fn save_frame(&self, frame: CompletedFrame) -> Result<(), Self::FrameStoreError>;
 
     /// Get all the projects of frames stored in this store.
-    fn get_projects(&self) -> Vec<NonEmptyString>;
+    fn get_projects(&self) -> Result<Vec<NonEmptyString>, Self::FrameStoreError>;
 
     /// Get the last frame, ordered by completion datetime.
-    fn get_last_frame(&self) -> Option<&CompletedFrame>;
+    fn get_last_frame(&self) -> Option<CompletedFrame>;
 
     /// Save a frame that is currently ongoing to the store.
     /// Will fail if there already is an ongoing frame.
@@ -161,68 +176,5 @@ pub trait FrameStore {
 
     fn has_ongoing_frame(&self) -> bool {
         self.get_ongoing_frame().is_some()
-    }
-}
-
-pub struct CompletedFrameStore {
-    frames: Vec<CompletedFrame>,
-}
-
-impl CompletedFrameStore {
-    /**
-     * Load a CompletedFrameStore from a file
-     */
-    pub fn load(path: &PathBuf) -> Result<Self, std::io::Error> {
-        if !path.exists() {
-            return Ok(CompletedFrameStore { frames: Vec::new() });
-        }
-
-        let json = std::fs::read_to_string(path)?;
-        let frames: Vec<watson::Frame> = serde_json::from_str(&json)?;
-        let frames = frames
-            .into_iter()
-            .map(|frame| CompletedFrame::from(frame))
-            .collect();
-        Ok(CompletedFrameStore { frames })
-    }
-
-    pub fn add_frame(&mut self, frame: CompletedFrame) {
-        self.frames.push(frame);
-    }
-
-    pub fn insert_or_update_frame(&mut self, frame: CompletedFrame) {
-        self.frames.retain(|f| f.0.id != frame.0.id);
-        self.add_frame(frame);
-    }
-
-    pub fn save(&self, store_path: &PathBuf) -> Result<(), std::io::Error> {
-        let json_array = json!(
-            self.frames
-                .iter()
-                .map(|frame| frame.clone().into())
-                .collect::<Vec<watson::Frame>>()
-        );
-        log::debug!("Writing to frames store. frame_count={}", self.frames.len());
-        let json = serde_json::to_string_pretty(&json_array).unwrap();
-        std::fs::write(store_path, json)?;
-        Ok(())
-    }
-
-    pub fn get_projects(&self) -> Vec<NonEmptyString> {
-        self.frames.iter().map(|f| f.0.project.clone()).collect()
-    }
-
-    pub fn get_last_frame(&self) -> Option<&CompletedFrame> {
-        self.frames.last()
-    }
-}
-
-impl Default for CompletedFrameStore {
-    /**
-     * Creates a new CompletedFrameStore instance with default configuration.
-     */
-    fn default() -> Self {
-        let config = Config::default();
-        CompletedFrameStore::load(&config.get_frames_path()).expect("Failed to read frames store")
     }
 }

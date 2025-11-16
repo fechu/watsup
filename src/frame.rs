@@ -12,8 +12,8 @@ use crate::{
     watson::{self, State},
 };
 
+/// Generate a unique ID for the frame using a hash of the current time
 fn generate_id() -> String {
-    // Generate a unique ID for the frame using a hash of the current time.
     let mut hasher = DefaultHasher::new();
     hasher.write(chrono::Local::now().to_string().as_bytes());
     format!("{:x}", hasher.finish())
@@ -131,6 +131,36 @@ impl CompletedFrame {
 
     pub fn end(&self) -> DateTime<Local> {
         self.0.end.unwrap()
+    }
+}
+
+pub trait FrameStore {
+    type FrameStoreError;
+
+    /// Save a frame to the store.
+    /// If the frame already exists (identified by "id") it will be updated, otherwise inserted.
+    /// Returns an error if the saving failed.
+    fn save_frame(frame: CompletedFrame) -> Result<(), Self::FrameStoreError>;
+
+    /// Get all the projects of frames stored in this store.
+    fn get_projects(&self) -> Vec<NonEmptyString>;
+
+    /// Get the last frame, ordered by completion datetime.
+    fn get_last_frame(&self) -> Option<&CompletedFrame>;
+
+    /// Save a frame that is currently ongoing to the store.
+    /// Will fail if there already is an ongoing frame.
+    fn save_ongoing_frame(&self, frame: Frame) -> Result<(), Self::FrameStoreError>;
+
+    /// Clear an ongoing frame if there is one.
+    /// Will return an error if there is no ongoing frame to clear from the store.
+    fn clear_ongoing_frame(&self) -> Result<(), Self::FrameStoreError>;
+
+    /// Get the ongoing frame if there is one.
+    fn get_ongoing_frame(&self) -> Option<Frame>;
+
+    fn has_ongoing_frame(&self) -> bool {
+        self.get_ongoing_frame().is_some()
     }
 }
 

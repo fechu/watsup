@@ -14,6 +14,14 @@ impl NonEmptyString {
     }
 }
 
+impl PartialEq for NonEmptyString {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for NonEmptyString {}
+
 impl From<NonEmptyString> for String {
     fn from(value: NonEmptyString) -> Self {
         value.0

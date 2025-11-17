@@ -561,4 +561,29 @@ mod store_tests {
         assert!(store.get_ongoing_frame().is_none());
         assert!(!store.has_ongoing_frame());
     }
+
+    #[test]
+    fn test_get_projects_has_none_by_default() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+
+        let projects = store.get_projects().expect("Failed to fetch projects");
+
+        assert_eq!(projects.len(), 0);
+    }
+
+    #[test]
+    fn test_get_projects() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let frame = get_completed_test_frame();
+
+        let project = frame.frame().project().clone();
+        store.save_frame(frame).expect("Failed to save frame");
+
+        let projects = store.get_projects().expect("Failed to get projects");
+
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0], project);
+    }
 }

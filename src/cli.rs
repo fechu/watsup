@@ -3,6 +3,7 @@ use std::fmt::Display;
 use std::fs::File;
 use std::process::Command as ProcessCommand;
 
+use chrono_humanize::HumanTime;
 use clap::{Parser, Subcommand};
 
 use crate::common::NonEmptyString;
@@ -311,7 +312,7 @@ impl<T: FrameStore> CommandExecutor<T> {
                 println!(
                     "Project {} started {}, ({})",
                     frame.project(),
-                    "TODO",
+                    HumanTime::from(frame.start().clone()),
                     frame.start()
                 );
                 Ok(())

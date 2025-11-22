@@ -163,6 +163,10 @@ pub trait FrameStore {
     /// Get the last frame, ordered by completion datetime.
     fn get_last_frame(&self) -> Option<CompletedFrame>;
 
+    /// Get a frame based on the id.
+    /// Returns a CompletedFrame if one matching `frame_id` exists, otherwise None.
+    fn get_frame(&self, frame_id: &str) -> Result<Option<CompletedFrame>, Self::FrameStoreError>;
+
     /// Save a frame that is currently ongoing to the store.
     /// Will fail if there already is an ongoing frame.
     fn save_ongoing_frame(&self, frame: Frame) -> Result<(), Self::FrameStoreError>;

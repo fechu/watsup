@@ -464,6 +464,14 @@ impl FrameStore for Store {
         let frame = state.and_then(|s| Some(frame::Frame::from(s)));
         frame
     }
+
+    fn get_frame(&self, frame_id: &str) -> Result<Option<CompletedFrame>, Self::FrameStoreError> {
+        let frames = self.load()?;
+        Ok(frames
+            .iter()
+            .find(|frame| frame.frame().id() == frame_id)
+            .map(|f| f.clone()))
+    }
 }
 
 #[cfg(test)]

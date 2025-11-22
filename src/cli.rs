@@ -36,7 +36,12 @@ pub enum Command {
     /// Cancel the current frame
     Cancel,
     /// Edit a frame
-    Edit,
+    Edit {
+        /// The id of the frame to edit.
+        /// If none provided, and a frame is ongoing, then frame is the currently ongoing frame.
+        /// If none provided, and no frame is ongoing, then frame is the last completed frame.
+        id: Option<String>,
+    },
     /// List all projects
     Projects,
 }
@@ -117,7 +122,21 @@ impl<T: FrameStore> CommandExecutor<T> {
             } => self.start(project, tags, no_gap),
             Command::Stop => self.stop(),
             Command::Cancel => self.cancel(),
-            Command::Edit => self.edit(),
+            Command::Edit { id } => {
+                if let Some(id) = id {
+                    self.edit(id)
+                } else {
+                    if self.frame_store.has_ongoing_frame() {
+                        self.edit_ongoing()
+                    } else {
+                        if let Some(f) = self.frame_store.get_last_frame() {
+                            self.edit(f.frame().id())
+                        } else {
+                            Err(CliError::InvalidFrame(None))
+                        }
+                    }
+                }
+            }
             Command::Projects => self.list_projects(),
         }
     }
@@ -202,77 +221,73 @@ impl<T: FrameStore> CommandExecutor<T> {
         }
     }
 
-    fn edit(&mut self) -> Result<(), CliError<T::FrameStoreError>> {
-        // First see if we have a current frame
-        let mut frame = self.frame_store.get_ongoing_frame();
-        // TODO: Make this nicer. This bool should not be necessary!
-        let is_ongoing = frame.is_some();
-        if frame.is_none() {
-            // If no ongoing frame, take the last frame
-            frame = self
-                .frame_store
-                .get_last_frame()
-                .and_then(|f| Some(f.frame().clone()))
+    fn edit_frame_in_editor(
+        frame_edit: &watson::FrameEdit,
+    ) -> Result<FrameEdit, CliError<T::FrameStoreError>> {
+        let editor = env::var_os("EDITOR").ok_or(CliError::EditorNotSet)?;
+        let tmp_file_path = std::env::temp_dir().join("watsup.tmp");
+        let tmp_file_write =
+            File::create(&tmp_file_path).map_err(|e| CliError::TempFileError(e.to_string()))?;
+        serde_json::to_writer_pretty(tmp_file_write, &frame_edit)
+            .map_err(|e| CliError::SerializationError(e.to_string()))?;
+        log::debug!(
+            "Starting editor for editing frame. editor={:?} frame_edit={:?}",
+            editor,
+            frame_edit
+        );
+        let exit_status = ProcessCommand::new(editor)
+            .arg(&tmp_file_path)
+            .status()
+            .map_err(|e| CliError::EditorError(e.to_string()))?;
+        let tmp_file_read =
+            File::open(&tmp_file_path).map_err(|e| CliError::TempFileError(e.to_string()))?;
+        let updated_frame_edit: FrameEdit = serde_json::from_reader(tmp_file_read)
+            .map_err(|e| CliError::SerializationError(e.to_string()))?;
+        log::debug!("Editor exited. exit_status={:?}", exit_status);
+
+        match exit_status.success() {
+            true => Ok(updated_frame_edit),
+            false => Err(CliError::EditorError(format!(
+                "Editor exist status: {}",
+                exit_status.to_string()
+            ))),
         }
+    }
 
-        if let Some(mut f) = frame {
-            let editor = env::var_os("EDITOR").ok_or(CliError::EditorNotSet)?;
+    fn edit(&mut self, frame_id: &str) -> Result<(), CliError<T::FrameStoreError>> {
+        let frame = self
+            .frame_store
+            .get_frame(frame_id)
+            .map_err(CliError::FrameStoreError)?
+            .ok_or(CliError::InvalidFrame(Some(frame_id.into())))?;
 
-            let tmp_file_path = std::env::temp_dir().join("watsup.tmp");
-            let tmp_file_write =
-                File::create(&tmp_file_path).map_err(|e| CliError::TempFileError(e.to_string()))?;
-            let frame_edit = watson::FrameEdit::from(&f);
-            serde_json::to_writer_pretty(tmp_file_write, &frame_edit)
-                .map_err(|e| CliError::SerializationError(e.to_string()))?;
-            log::debug!(
-                "Starting editor for editing frame. editor={:?} frame_id={}",
-                editor,
-                f.id()
-            );
-            let exit_status = ProcessCommand::new(editor)
-                .arg(&tmp_file_path)
-                .status()
-                .map_err(|e| CliError::EditorError(e.to_string()))?;
-            let tmp_file_read =
-                File::open(&tmp_file_path).map_err(|e| CliError::TempFileError(e.to_string()))?;
-            let updated_frame_edit: FrameEdit = serde_json::from_reader(tmp_file_read)
-                .map_err(|e| CliError::SerializationError(e.to_string()))?;
-            log::debug!("Editor exited. exit_status={:?}", exit_status);
-            if exit_status.success() {
-                // TODO: Save the updated frame
-                f.update_from(updated_frame_edit);
-                log::debug!(
-                    "Updated frame successfully. Writing updates to disk. frame={:?}",
-                    f
-                );
+        let updated_frame_edit =
+            Self::edit_frame_in_editor(&watson::FrameEdit::from(frame.frame()))?;
 
-                if is_ongoing {
-                    self.frame_store
-                        .clear_ongoing_frame()
-                        .map_err(CliError::FrameStoreError)?;
-                    log::debug!("Updating ongoing state");
-                    self.frame_store
-                        .save_ongoing_frame(f)
-                        .map_err(CliError::FrameStoreError)
-                } else {
-                    let completed_frame = CompletedFrame::from_frame(f).unwrap();
-                    log::debug!(
-                        "Updating completed frame store. frame={:?}",
-                        completed_frame
-                    );
-                    self.frame_store
-                        .save_frame(completed_frame)
-                        .map_err(CliError::FrameStoreError)
-                }
-            } else {
-                Err(CliError::EditorError(format!(
-                    "Editor exist status: {}",
-                    exit_status.to_string()
-                )))
-            }
-        } else {
-            Err(CliError::InvalidFrame(None))
-        }
+        let mut frame = frame.frame().clone();
+        frame.update_from(updated_frame_edit);
+        log::debug!(
+            "Updated frame successfully. Writing updates to disk. frame={:?}",
+            frame
+        );
+        self.frame_store
+            .save_frame(CompletedFrame::from_frame(frame).unwrap())
+            .map_err(CliError::FrameStoreError)
+    }
+
+    fn edit_ongoing(&mut self) -> Result<(), CliError<T::FrameStoreError>> {
+        let mut ongoing_frame = self
+            .frame_store
+            .get_ongoing_frame()
+            .ok_or(CliError::InvalidFrame(None))?;
+
+        let frame_edit = watson::FrameEdit::from(&ongoing_frame);
+        let frame_edit = Self::edit_frame_in_editor(&frame_edit)?;
+
+        ongoing_frame.update_from(frame_edit);
+        self.frame_store
+            .save_ongoing_frame(ongoing_frame)
+            .map_err(CliError::FrameStoreError)
     }
 
     fn list_projects(&self) -> Result<(), CliError<T::FrameStoreError>> {

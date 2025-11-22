@@ -44,6 +44,8 @@ pub enum Command {
     },
     /// List all projects
     Projects,
+    /// Show the status of the currently tracked project
+    Status,
 }
 
 #[derive(Debug, Clone)]
@@ -72,7 +74,7 @@ impl<E: Display> Display for CliError<E> {
                 write!(f, "Failed to store frame. details={}", details)
             }
             CliError::NoOngoingRecording => {
-                write!(f, "No ongoing recording")
+                write!(f, "No project started")
             }
             CliError::EditorNotSet => {
                 write!(f, "Editor not set via EDITOR env variable")
@@ -138,6 +140,7 @@ impl<T: FrameStore> CommandExecutor<T> {
                 }
             }
             Command::Projects => self.list_projects(),
+            Command::Status => self.status(),
         }
     }
 
@@ -299,5 +302,20 @@ impl<T: FrameStore> CommandExecutor<T> {
             println!("{}", project);
         }
         Ok(())
+    }
+
+    fn status(&self) -> Result<(), CliError<<T as FrameStore>::FrameStoreError>> {
+        match self.frame_store.get_ongoing_frame() {
+            None => Err(CliError::NoOngoingRecording),
+            Some(frame) => {
+                println!(
+                    "Project {} started {}, ({})",
+                    frame.project(),
+                    "TODO",
+                    frame.start()
+                );
+                Ok(())
+            }
+        }
     }
 }

@@ -17,9 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frame_store = watson::Store::new(config);
 
     let mut command_executor = CommandExecutor::new(frame_store);
-    match command_executor.execute_command(&cli.command) {
-        Err(error) => println!("Error: {}", error),
-        Ok(_) => {}
+    if let Err(error) = command_executor.execute_command(&cli.command) {
+        println!("Error: {}", error);
     }
 
     Ok(())

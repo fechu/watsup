@@ -279,10 +279,7 @@ impl State {
             Ok(_) => (),
             Err(_) => return None,
         };
-        match serde_json::from_str(&contents) {
-            Ok(state) => Some(state),
-            Err(_) => None,
-        }
+        serde_json::from_str(&contents).ok()
     }
 
     pub fn project(&self) -> &NonEmptyString {
@@ -347,30 +344,30 @@ impl From<&frame::Frame> for FrameEdit {
 
 #[derive(Debug)]
 pub enum StoreError {
-    OngoingFrameError,
-    SerializationError(serde_json::Error),
-    IoError(std::io::Error),
+    OngoingFrame,
+    Serialization(serde_json::Error),
+    IO(std::io::Error),
 }
 
 impl Display for StoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StoreError::OngoingFrameError => write!(f, "Ongoing frame error"),
-            StoreError::SerializationError(e) => write!(f, "Serialization error: {}", e),
-            StoreError::IoError(e) => write!(f, "IO error: {}", e),
+            StoreError::OngoingFrame => write!(f, "Ongoing frame error"),
+            StoreError::Serialization(e) => write!(f, "Serialization error: {}", e),
+            StoreError::IO(e) => write!(f, "IO error: {}", e),
         }
     }
 }
 
 impl From<std::io::Error> for StoreError {
     fn from(error: std::io::Error) -> Self {
-        StoreError::IoError(error)
+        StoreError::IO(error)
     }
 }
 
 impl From<serde_json::Error> for StoreError {
     fn from(error: serde_json::Error) -> Self {
-        StoreError::SerializationError(error)
+        StoreError::Serialization(error)
     }
 }
 
@@ -392,10 +389,7 @@ impl Store {
 
         let json = std::fs::read_to_string(frames_file_path)?;
         let frames: Vec<Frame> = serde_json::from_str(&json)?;
-        let frames = frames
-            .into_iter()
-            .map(|frame| CompletedFrame::from(frame))
-            .collect();
+        let frames = frames.into_iter().map(CompletedFrame::from).collect();
         Ok(frames)
     }
 
@@ -438,31 +432,29 @@ impl FrameStore for Store {
 
     fn get_last_frame(&self) -> Option<frame::CompletedFrame> {
         match self.load() {
-            Ok(frames) => frames.last().and_then(|f| Some(f.clone())),
+            Ok(frames) => frames.last().cloned(),
             Err(_) => None,
         }
     }
 
     fn save_ongoing_frame(&self, frame: frame::Frame) -> Result<(), Self::FrameStoreError> {
         if self.has_ongoing_frame() {
-            return Err(StoreError::OngoingFrameError);
+            return Err(StoreError::OngoingFrame);
         }
 
         let state = State::from(frame);
         state
             .save(&self.config.get_state_path())
-            .map_err(StoreError::IoError)
+            .map_err(StoreError::IO)
     }
 
     fn clear_ongoing_frame(&self) -> Result<(), Self::FrameStoreError> {
-        let mut file = File::create(self.config.get_state_path()).map_err(StoreError::IoError)?;
-        file.write_all(b"{}").map_err(StoreError::IoError)
+        let mut file = File::create(self.config.get_state_path()).map_err(StoreError::IO)?;
+        file.write_all(b"{}").map_err(StoreError::IO)
     }
 
     fn get_ongoing_frame(&self) -> Option<frame::Frame> {
-        let state = State::load(&self.config.get_state_path());
-        let frame = state.and_then(|s| Some(frame::Frame::from(s)));
-        frame
+        State::load(&self.config.get_state_path()).map(frame::Frame::from)
     }
 
     fn get_frame(&self, frame_id: &str) -> Result<Option<CompletedFrame>, Self::FrameStoreError> {
@@ -470,7 +462,7 @@ impl FrameStore for Store {
         Ok(frames
             .iter()
             .find(|frame| frame.frame().id() == frame_id)
-            .map(|f| f.clone()))
+            .cloned())
     }
 }
 

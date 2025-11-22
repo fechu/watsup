@@ -52,8 +52,8 @@ impl Frame {
             project,
             id: id.unwrap_or(generate_id()),
             start: start.unwrap_or(chrono::Local::now()),
-            end: end,
-            tags: tags,
+            end,
+            tags,
             last_edit: last_edit.unwrap_or(chrono::Local::now()),
         }
     }
@@ -114,10 +114,7 @@ pub struct CompletedFrame(Frame);
 
 impl CompletedFrame {
     pub fn from_frame(frame: Frame) -> Option<Self> {
-        match frame.end {
-            Some(_) => Some(CompletedFrame(frame)),
-            None => None,
-        }
+        frame.end.map(|_| CompletedFrame(frame))
     }
 
     pub fn frame(&self) -> &Frame {
@@ -131,7 +128,7 @@ impl CompletedFrame {
 
 impl Ord for CompletedFrame {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.start().cmp(&other.0.start())
+        self.0.start().cmp(other.0.start())
     }
 }
 

@@ -108,9 +108,7 @@ pub struct CommandExecutor<T: FrameStore> {
 
 impl<T: FrameStore> CommandExecutor<T> {
     pub fn new(frame_store: T) -> Self {
-        Self {
-            frame_store: frame_store,
-        }
+        Self { frame_store }
     }
 
     pub fn execute_command(
@@ -128,16 +126,12 @@ impl<T: FrameStore> CommandExecutor<T> {
             Command::Edit { id } => {
                 if let Some(id) = id {
                     self.edit(id)
+                } else if self.frame_store.has_ongoing_frame() {
+                    self.edit_ongoing()
+                } else if let Some(f) = self.frame_store.get_last_frame() {
+                    self.edit(f.frame().id())
                 } else {
-                    if self.frame_store.has_ongoing_frame() {
-                        self.edit_ongoing()
-                    } else {
-                        if let Some(f) = self.frame_store.get_last_frame() {
-                            self.edit(f.frame().id())
-                        } else {
-                            Err(CliError::InvalidFrame(None))
-                        }
-                    }
+                    Err(CliError::InvalidFrame(None))
                 }
             }
             Command::Projects => self.list_projects(),
@@ -148,13 +142,13 @@ impl<T: FrameStore> CommandExecutor<T> {
     fn start(
         &self,
         project: &String,
-        tags: &Vec<String>,
+        tags: &[String],
         no_gap: &bool,
     ) -> Result<(), CliError<T::FrameStoreError>> {
         if let Some(ongoing_project_name) = self
             .frame_store
             .get_ongoing_frame()
-            .and_then(|f| Some(f.project().clone()))
+            .map(|f| f.project().clone())
         {
             Err(CliError::OngoingProject(ongoing_project_name))
         } else {
@@ -194,7 +188,7 @@ impl<T: FrameStore> CommandExecutor<T> {
                 let mut frame = frame.clone();
                 let completed_frame = frame.set_end(chrono::Local::now());
                 let frame_project = completed_frame.frame().project().clone();
-                let frame_start = completed_frame.frame().start().clone();
+                let frame_start = *completed_frame.frame().start();
                 match self.frame_store.save_frame(completed_frame) {
                     Err(e) => Err(CliError::FrameStoreError(e)),
                     Ok(_) => {
@@ -253,7 +247,7 @@ impl<T: FrameStore> CommandExecutor<T> {
             true => Ok(updated_frame_edit),
             false => Err(CliError::EditorError(format!(
                 "Editor exist status: {}",
-                exit_status.to_string()
+                exit_status
             ))),
         }
     }
@@ -312,7 +306,7 @@ impl<T: FrameStore> CommandExecutor<T> {
                 println!(
                     "Project {} started {}, ({})",
                     frame.project(),
-                    HumanTime::from(frame.start().clone()),
+                    HumanTime::from(*frame.start()),
                     frame.start()
                 );
                 Ok(())

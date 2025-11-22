@@ -3,7 +3,6 @@ use std::fmt::Display;
 use std::fs::File;
 use std::process::Command as ProcessCommand;
 
-use chrono_humanize::HumanTime;
 use clap::{Parser, Subcommand};
 
 use crate::common::NonEmptyString;
@@ -303,12 +302,7 @@ impl<T: FrameStore> CommandExecutor<T> {
         match self.frame_store.get_ongoing_frame() {
             None => Err(CliError::NoOngoingRecording),
             Some(frame) => {
-                println!(
-                    "Project {} started {}, ({})",
-                    frame.project(),
-                    HumanTime::from(*frame.start()),
-                    frame.start()
-                );
+                println!("{}", frame);
                 Ok(())
             }
         }

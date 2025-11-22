@@ -1,6 +1,10 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::{
+    fmt::Display,
+    hash::{DefaultHasher, Hasher},
+};
 
 use chrono::{DateTime, Local, TimeZone};
+use chrono_humanize::HumanTime;
 
 use crate::{
     common::NonEmptyString,
@@ -104,6 +108,18 @@ impl Frame {
 
     pub fn end(&self) -> &Option<DateTime<Local>> {
         &self.end
+    }
+}
+
+impl Display for Frame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Project {} started {} ({})",
+            self.project,
+            HumanTime::from(self.start),
+            self.start
+        )
     }
 }
 

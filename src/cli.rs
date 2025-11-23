@@ -3,12 +3,16 @@ use std::fmt::Display;
 use std::fs::File;
 use std::process::Command as ProcessCommand;
 
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Local;
 use clap::{Parser, Subcommand};
 
 use crate::common::NonEmptyString;
 use crate::frame::CompletedFrame;
 use crate::frame::Frame;
 use crate::frame::FrameStore;
+use crate::log::FrameLog;
 use crate::watson;
 use crate::watson::FrameEdit;
 
@@ -46,6 +50,17 @@ pub enum Command {
     Projects,
     /// Show the status of the currently tracked project
     Status,
+    /// Show the log of work between provided start and end date
+    Log {
+        /// The date and time from which to show the frames. Defaults to the beginning of the current week.
+        /// TODO: MAKE THIS WORK
+        #[arg(short, long)]
+        start: Option<DateTime<Local>>,
+        /// The date and time until which to show the frames. Defaults to now.
+        #[arg(short, long)]
+        /// TODO: MAKE THIS WORK
+        end: Option<DateTime<Local>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -135,6 +150,12 @@ impl<T: FrameStore> CommandExecutor<T> {
             }
             Command::Projects => self.list_projects(),
             Command::Status => self.status(),
+            Command::Log { start, end } => {
+                // TODO: Change default for start to last monday 00:00
+                let start = start.unwrap_or(Local::now() - Duration::days(7));
+                let end = end.unwrap_or(Local::now());
+                self.show_log(start, end)
+            }
         }
     }
 
@@ -306,5 +327,20 @@ impl<T: FrameStore> CommandExecutor<T> {
                 Ok(())
             }
         }
+    }
+
+    fn show_log(
+        &self,
+        start: DateTime<Local>,
+        end: DateTime<Local>,
+    ) -> Result<(), CliError<<T as FrameStore>::FrameStoreError>> {
+        let frames = self
+            .frame_store
+            .get_frames(start, end)
+            .map_err(CliError::FrameStoreError)?;
+
+        let log = FrameLog::new(&frames);
+        print!("{}", log);
+        Ok(())
     }
 }

@@ -464,6 +464,18 @@ impl FrameStore for Store {
             .find(|frame| frame.frame().id() == frame_id)
             .cloned())
     }
+
+    fn get_frames(
+        &self,
+        start: DateTime<Local>,
+        end: DateTime<Local>,
+    ) -> Result<Vec<CompletedFrame>, Self::FrameStoreError> {
+        let frames = self.load()?;
+        Ok(frames
+            .into_iter()
+            .filter(|f| *f.frame().start() >= start && f.end() <= end)
+            .collect())
+    }
 }
 
 #[cfg(test)]

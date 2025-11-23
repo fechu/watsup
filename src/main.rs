@@ -5,6 +5,7 @@ mod cli;
 mod common;
 mod config;
 mod frame;
+mod log;
 mod watson;
 
 use cli::CommandExecutor;

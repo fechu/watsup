@@ -3,7 +3,7 @@ use std::{
     hash::{DefaultHasher, Hasher},
 };
 
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{DateTime, Duration, Local, TimeZone};
 use chrono_humanize::HumanTime;
 
 use crate::{
@@ -140,6 +140,10 @@ impl CompletedFrame {
     pub fn end(&self) -> DateTime<Local> {
         self.0.end.unwrap()
     }
+
+    pub fn duration(&self) -> Duration {
+        self.end() - self.frame().start()
+    }
 }
 
 impl Ord for CompletedFrame {
@@ -162,6 +166,22 @@ impl PartialEq for CompletedFrame {
     }
 }
 
+impl Display for CompletedFrame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let time_format = "%H:%M";
+        write!(
+            f,
+            "{:.8}  {} to {}  {}h {:02}m  {}",
+            self.frame().id(),
+            self.frame().start().time().format(time_format),
+            self.end().time().format(time_format),
+            self.duration().num_hours(),
+            self.duration().num_minutes(),
+            self.frame().project()
+        )
+    }
+}
+
 pub trait FrameStore {
     type FrameStoreError;
 
@@ -179,6 +199,13 @@ pub trait FrameStore {
     /// Get a frame based on the id.
     /// Returns a CompletedFrame if one matching `frame_id` exists, otherwise None.
     fn get_frame(&self, frame_id: &str) -> Result<Option<CompletedFrame>, Self::FrameStoreError>;
+
+    /// Get all frames that fall between start and end time
+    fn get_frames(
+        &self,
+        start: DateTime<Local>,
+        end: DateTime<Local>,
+    ) -> Result<Vec<CompletedFrame>, Self::FrameStoreError>;
 
     /// Save a frame that is currently ongoing to the store.
     /// Will fail if there already is an ongoing frame.

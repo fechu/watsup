@@ -33,12 +33,13 @@ impl<'a> Display for FrameLog<'a> {
         let grouped_by_day = self.grouped_by_day();
         for (day, frames) in grouped_by_day {
             let total_duration = frames.iter().map(|f| f.duration()).reduce(|f1, f2| f1 + f2);
+            writeln!(f, "")?;
             writeln!(
                 f,
                 "{} ({}h {}min)",
                 day.format("%A %d %B %Y"),
                 total_duration.unwrap().num_hours(),
-                total_duration.unwrap().num_minutes(),
+                total_duration.unwrap().num_minutes() - total_duration.unwrap().num_hours() * 60,
             )?;
             for frame in frames {
                 writeln!(f, "  {}", frame)?;

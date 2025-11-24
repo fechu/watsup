@@ -171,12 +171,12 @@ impl Display for CompletedFrame {
         let time_format = "%H:%M";
         write!(
             f,
-            "{:.8}  {} to {}  {}h {:02}m  {}",
+            "{:.8}  {} to {}  {:>2}h {:>2}m  {}",
             self.frame().id(),
             self.frame().start().time().format(time_format),
             self.end().time().format(time_format),
             self.duration().num_hours(),
-            self.duration().num_minutes(),
+            self.duration().num_minutes() - self.duration().num_hours() * 60,
             self.frame().project()
         )
     }

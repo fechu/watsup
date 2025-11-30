@@ -605,6 +605,7 @@ mod store_tests {
         assert_eq!(projects[0], project);
     }
 
+    #[test]
     fn test_get_projects_of_multiple_frames_returns_no_duplicates() {
         let test_config = get_test_config();
         let store = Store::new(test_config.config);

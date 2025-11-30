@@ -6,6 +6,7 @@ use std::process::Command as ProcessCommand;
 use chrono::DateTime;
 use chrono::Duration;
 use chrono::Local;
+use chrono::TimeZone;
 use clap::{Parser, Subcommand};
 
 use crate::common::NonEmptyString;
@@ -44,6 +45,7 @@ pub enum Command {
         /// The id of the frame to edit.
         /// If none provided, and a frame is ongoing, then frame is the currently ongoing frame.
         /// If none provided, and no frame is ongoing, then frame is the last completed frame.
+        #[clap(verbatim_doc_comment)]
         id: Option<String>,
     },
     /// List all projects
@@ -53,14 +55,28 @@ pub enum Command {
     /// Show the log of work between provided start and end date
     Log {
         /// The date and time from which to show the frames. Defaults to the beginning of the current week.
-        /// TODO: MAKE THIS WORK
-        #[arg(short, long)]
+        #[arg(short, long, value_parser = parse_datetime)]
         start: Option<DateTime<Local>>,
         /// The date and time until which to show the frames. Defaults to now.
-        #[arg(short, long)]
-        /// TODO: MAKE THIS WORK
+        #[arg(short, long, value_parser = parse_datetime)]
         end: Option<DateTime<Local>>,
     },
+}
+
+/// Parse a datetime string into a `chrono::DateTime<Local>`
+///
+/// Accepts formats "YYYY-MM-DD HH:MM" or "HH:MM"
+fn parse_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
+    let arg = arg.trim();
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(arg, "%Y-%m-%d %H:%M") {
+        Ok(Local.from_local_datetime(&dt).unwrap())
+    } else if let Ok(time) = chrono::NaiveTime::parse_from_str(arg, "%H:%M") {
+        let today = Local::now().date_naive();
+        let dt = today.and_time(time);
+        Ok(Local.from_local_datetime(&dt).unwrap())
+    } else {
+        Err("Invalid datetime expected format YYYY-MM-DD HH:MM or HH:MM".to_string())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +168,7 @@ impl<T: FrameStore> CommandExecutor<T> {
             Command::Status => self.status(),
             Command::Log { start, end } => {
                 // TODO: Change default for start to last monday 00:00
+                println!("foO: {:?}", start);
                 let start = start.unwrap_or(Local::now() - Duration::days(7));
                 let end = end.unwrap_or(Local::now());
                 self.show_log(start, end)

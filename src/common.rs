@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
     fmt::{self, Display},
     hash::Hash,
 };

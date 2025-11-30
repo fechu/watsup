@@ -7,7 +7,7 @@ w() {
     fi
 
     # Ongoing project, show status and list of possible actions
-	$WATSUP_BINARY log --current --no-pager --from $(date +%Y-%m-%d) --to $(date +%Y-%m-%d)
+	$WATSUP_BINARY log --current --from $(date +%Y-%m-%d) --to $(date +%Y-%m-%d)
     action=$(echo -e "do-nothing\nstart\nstart-edit\nstop\nstop-edit\nabort\nedit\nchange\nhelp" | fzf --height=11 --prompt="Select an action: ")
     case $action in
         start*)

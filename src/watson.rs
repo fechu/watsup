@@ -2,6 +2,7 @@
 //
 
 use std::{
+    collections::HashSet,
     fmt::Display,
     fs::File,
     io::{Read, Write},
@@ -422,11 +423,13 @@ impl FrameStore for Store {
     }
 
     fn get_projects(&self) -> Result<Vec<NonEmptyString>, Self::FrameStoreError> {
-        let projects = self
+        let projects: HashSet<NonEmptyString> = self
             .load()?
             .iter()
             .map(|f| f.frame().project().clone())
             .collect();
+        let mut projects: Vec<NonEmptyString> = projects.into_iter().collect();
+        projects.sort();
         Ok(projects)
     }
 
@@ -500,15 +503,18 @@ mod store_tests {
         }
     }
 
+    fn get_test_frame_with_project(project: NonEmptyString) -> Frame {
+        Frame::new(project, None, None, None, vec![], None)
+    }
+
     fn get_test_frame() -> Frame {
-        Frame::new(
-            NonEmptyString::new("project name").unwrap(),
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        )
+        get_test_frame_with_project("project name".try_into().unwrap())
+    }
+
+    fn get_completed_test_frame_with_project(project: NonEmptyString) -> CompletedFrame {
+        let mut frame = get_test_frame_with_project(project);
+        frame.set_end(chrono::Local::now());
+        CompletedFrame::from_frame(frame).unwrap()
     }
 
     fn get_completed_test_frame() -> CompletedFrame {
@@ -592,6 +598,22 @@ mod store_tests {
 
         let project = frame.frame().project().clone();
         store.save_frame(frame).expect("Failed to save frame");
+
+        let projects = store.get_projects().expect("Failed to get projects");
+
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0], project);
+    }
+
+    fn test_get_projects_of_multiple_frames_returns_no_duplicates() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let project = NonEmptyString::new("project").unwrap();
+        let frame1 = get_completed_test_frame_with_project(project.clone());
+        let frame2 = get_completed_test_frame_with_project(project.clone());
+
+        store.save_frame(frame1).expect("Failed to save frame");
+        store.save_frame(frame2).expect("Failed to save frame");
 
         let projects = store.get_projects().expect("Failed to get projects");
 

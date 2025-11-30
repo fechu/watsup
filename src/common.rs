@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, Display};
+use std::{
+    collections::HashSet,
+    fmt::{self, Display},
+    hash::Hash,
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NonEmptyString(String);
@@ -25,6 +29,32 @@ impl Eq for NonEmptyString {}
 impl From<NonEmptyString> for String {
     fn from(value: NonEmptyString) -> Self {
         value.0
+    }
+}
+
+impl TryFrom<&str> for NonEmptyString {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        NonEmptyString::new(value).ok_or("String is empty")
+    }
+}
+
+impl Hash for NonEmptyString {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl PartialOrd for NonEmptyString {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for NonEmptyString {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 }
 

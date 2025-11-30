@@ -55,27 +55,69 @@ pub enum Command {
     /// Show the log of work between provided start and end date
     Log {
         /// The date and time from which to show the frames. Defaults to the beginning of the current week.
-        #[arg(short, long, value_parser = parse_datetime)]
-        start: Option<DateTime<Local>>,
+        #[arg(short, long, value_parser = parse_from_datetime)]
+        from: Option<DateTime<Local>>,
         /// The date and time until which to show the frames. Defaults to now.
-        #[arg(short, long, value_parser = parse_datetime)]
-        end: Option<DateTime<Local>>,
+        #[arg(short, long, value_parser = parse_to_datetime)]
+        to: Option<DateTime<Local>>,
     },
+}
+
+/// Variants for parsing a date, time or datetime argument from the command line.
+/// See `parse_datetime` for usage
+enum DateTimeArgument {
+    DateTime(chrono::NaiveDateTime),
+    Date(chrono::NaiveDate),
+    Time(chrono::NaiveTime),
 }
 
 /// Parse a datetime string into a `chrono::DateTime<Local>`
 ///
 /// Accepts formats "YYYY-MM-DD HH:MM" or "HH:MM"
-fn parse_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
+fn parse_datetime(arg: &str) -> Result<DateTimeArgument, String> {
     let arg = arg.trim();
     if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(arg, "%Y-%m-%d %H:%M") {
-        Ok(Local.from_local_datetime(&dt).unwrap())
+        Ok(DateTimeArgument::DateTime(dt))
+    } else if let Ok(date) = chrono::NaiveDate::parse_from_str(arg, "%Y-%m-%d") {
+        Ok(DateTimeArgument::Date(date))
     } else if let Ok(time) = chrono::NaiveTime::parse_from_str(arg, "%H:%M") {
-        let today = Local::now().date_naive();
-        let dt = today.and_time(time);
-        Ok(Local.from_local_datetime(&dt).unwrap())
+        Ok(DateTimeArgument::Time(time))
     } else {
         Err("Invalid datetime expected format YYYY-MM-DD HH:MM or HH:MM".to_string())
+    }
+}
+
+/// Parse a start date
+/// By default if the time is not provided, the time will be set to 00:00 to include frames
+/// from the very beginning of the day
+fn parse_from_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
+    match parse_datetime(arg)? {
+        DateTimeArgument::DateTime(dt) => Ok(Local.from_local_datetime(&dt).unwrap()),
+        DateTimeArgument::Date(date) => {
+            let time = chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap();
+            Ok(Local.from_local_datetime(&date.and_time(time)).unwrap())
+        }
+        DateTimeArgument::Time(time) => {
+            let date = Local::now();
+            Ok(date.with_time(time).unwrap())
+        }
+    }
+}
+
+/// Parse an end date
+/// By default if the time is not provided, the time will be set to 23:59 to include frames
+/// from the very end of the day
+fn parse_to_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
+    match parse_datetime(arg)? {
+        DateTimeArgument::DateTime(dt) => Ok(Local.from_local_datetime(&dt).unwrap()),
+        DateTimeArgument::Date(date) => {
+            let time = chrono::NaiveTime::from_hms_opt(23, 59, 59).unwrap();
+            Ok(Local.from_local_datetime(&date.and_time(time)).unwrap())
+        }
+        DateTimeArgument::Time(time) => {
+            let date = Local::now();
+            Ok(date.with_time(time).unwrap())
+        }
     }
 }
 
@@ -166,9 +208,10 @@ impl<T: FrameStore> CommandExecutor<T> {
             }
             Command::Projects => self.list_projects(),
             Command::Status => self.status(),
-            Command::Log { start, end } => {
-                // TODO: Change default for start to last monday 00:00
-                println!("foO: {:?}", start);
+            Command::Log {
+                from: start,
+                to: end,
+            } => {
                 let start = start.unwrap_or(Local::now() - Duration::days(7));
                 let end = end.unwrap_or(Local::now());
                 self.show_log(start, end)

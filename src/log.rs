@@ -31,7 +31,10 @@ impl<'a> FrameLog<'a> {
 impl<'a> Display for FrameLog<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let grouped_by_day = self.grouped_by_day();
-        for (day, frames) in grouped_by_day {
+        let mut days = grouped_by_day.keys().collect::<Vec<_>>();
+        days.sort_by(|a, b| b.cmp(a));
+        for day in days {
+            let frames = grouped_by_day.get(day).unwrap();
             let total_duration = frames.iter().map(|f| f.duration()).reduce(|f1, f2| f1 + f2);
             writeln!(f, "")?;
             writeln!(

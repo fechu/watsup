@@ -23,7 +23,10 @@ fn setup_logging() -> Result<(), io::Error> {
         .create(true)
         .open(log_file_path)?;
     let _ = WriteLogger::init(::log::LevelFilter::Trace, Config::default(), file);
-    info!("Initialized logging");
+    info!(
+        "Initialized logging. system info: OS={}",
+        std::env::consts::OS
+    );
     Ok(())
 }
 

@@ -18,7 +18,11 @@ impl Default for Config {
     fn default() -> Self {
         let home = PathBuf::from(env::var("HOME").unwrap());
         Self {
-            data_store: home.join("Library/Application Support/watson"),
+            data_store: match std::env::consts::OS {
+                "macos" => home.join("Library/Application Support/watson"),
+                "linux" => todo!(),
+                _ => "/tmp/".into(),
+            },
         }
     }
 }

@@ -54,6 +54,9 @@ pub enum Command {
     Status,
     /// Show the log of work between provided start and end date
     Log {
+        /// Include the currently ongoing frame (if there is one) in the log
+        #[arg(short, long)]
+        current: bool,
         /// The date and time from which to show the frames. Defaults to the beginning of the current week.
         #[arg(short, long, value_parser = parse_from_datetime)]
         from: Option<DateTime<Local>>,
@@ -209,12 +212,13 @@ impl<T: FrameStore> CommandExecutor<T> {
             Command::Projects => self.list_projects(),
             Command::Status => self.status(),
             Command::Log {
-                from: start,
-                to: end,
+                current: include_current,
+                from,
+                to,
             } => {
-                let start = start.unwrap_or(Local::now() - Duration::days(7));
-                let end = end.unwrap_or(Local::now());
-                self.show_log(start, end)
+                let from = from.unwrap_or(Local::now() - Duration::days(7));
+                let to = to.unwrap_or(Local::now());
+                self.show_log(from, to, *include_current)
             }
         }
     }
@@ -391,13 +395,19 @@ impl<T: FrameStore> CommandExecutor<T> {
 
     fn show_log(
         &self,
-        start: DateTime<Local>,
-        end: DateTime<Local>,
+        from: DateTime<Local>,
+        to: DateTime<Local>,
+        include_current: bool,
     ) -> Result<(), CliError<<T as FrameStore>::FrameStoreError>> {
-        let frames = self
+        let mut frames = self
             .frame_store
-            .get_frames(start, end)
+            .get_frames(from, to)
             .map_err(CliError::FrameStoreError)?;
+
+        if include_current && let Some(ongoing_frame) = self.frame_store.get_ongoing_frame() {
+            let frame = ongoing_frame.clone().set_end(Local::now());
+            frames.push(frame);
+        }
 
         let log = FrameLog::new(&frames);
         print!("{}", log);

@@ -8,6 +8,7 @@ use chrono::Duration;
 use chrono::Local;
 use chrono::TimeZone;
 use clap::{Parser, Subcommand};
+use log::info;
 
 use crate::common::NonEmptyString;
 use crate::frame::CompletedFrame;
@@ -24,7 +25,7 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum Command {
     /// Start a new frame to record time for a project
     Start {
@@ -190,6 +191,7 @@ impl<T: FrameStore> CommandExecutor<T> {
         &mut self,
         command: &Command,
     ) -> Result<(), CliError<T::FrameStoreError>> {
+        info!("Executing command: {:?}", command);
         match command {
             Command::Start {
                 project,

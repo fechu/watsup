@@ -1,6 +1,6 @@
 use std::{env, fs::OpenOptions, io, path::PathBuf};
 
-use ::log::info;
+use ::log::{info, warn};
 use clap::Parser;
 use simplelog::{Config, WriteLogger};
 
@@ -36,6 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut command_executor = CommandExecutor::new(frame_store);
     if let Err(error) = command_executor.execute_command(&cli.command) {
+        warn!("Command execution error: {:?}", error);
         println!("Error: {}", error);
     }
 

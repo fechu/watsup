@@ -1,5 +1,8 @@
+use std::{env, fs::OpenOptions, io, path::PathBuf};
+
+use ::log::info;
 use clap::Parser;
-use simple_logger::SimpleLogger;
+use simplelog::{Config, WriteLogger};
 
 mod cli;
 mod common;
@@ -10,8 +13,22 @@ mod watson;
 
 use cli::CommandExecutor;
 
+fn setup_logging() -> Result<(), io::Error> {
+    let home = PathBuf::from(env::var("HOME").unwrap());
+    let config_folder = home.join(".config/watsup");
+    std::fs::create_dir_all(&config_folder)?;
+    let log_file_path = config_folder.join("log.txt");
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(log_file_path)?;
+    let _ = WriteLogger::init(::log::LevelFilter::Trace, Config::default(), file);
+    info!("Initialized logging");
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    SimpleLogger::new().env().init().unwrap();
+    setup_logging()?;
 
     let cli = cli::Cli::parse();
     let config = config::Config::default();

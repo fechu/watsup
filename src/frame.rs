@@ -208,7 +208,7 @@ pub trait FrameStore {
     ) -> Result<Vec<CompletedFrame>, Self::FrameStoreError>;
 
     /// Save a frame that is currently ongoing to the store.
-    /// Will fail if there already is an ongoing frame.
+    /// If there is already an ongoing frame this method will overwrite the ongoing frame.
     fn save_ongoing_frame(&self, frame: Frame) -> Result<(), Self::FrameStoreError>;
 
     /// Clear an ongoing frame if there is one.

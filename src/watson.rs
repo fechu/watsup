@@ -345,7 +345,6 @@ impl From<&frame::Frame> for FrameEdit {
 
 #[derive(Debug)]
 pub enum StoreError {
-    OngoingFrame,
     Serialization(serde_json::Error),
     IO(std::io::Error),
 }
@@ -353,7 +352,6 @@ pub enum StoreError {
 impl Display for StoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StoreError::OngoingFrame => write!(f, "Ongoing frame error"),
             StoreError::Serialization(e) => write!(f, "Serialization error: {}", e),
             StoreError::IO(e) => write!(f, "IO error: {}", e),
         }
@@ -441,10 +439,6 @@ impl FrameStore for Store {
     }
 
     fn save_ongoing_frame(&self, frame: frame::Frame) -> Result<(), Self::FrameStoreError> {
-        if self.has_ongoing_frame() {
-            return Err(StoreError::OngoingFrame);
-        }
-
         let state = State::from(frame);
         state
             .save(&self.config.get_state_path())
@@ -620,5 +614,31 @@ mod store_tests {
 
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0], project);
+    }
+
+    #[test]
+    fn test_save_ongoing_frame_with_no_ongoing_frame() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let frame = get_test_frame();
+
+        store
+            .save_ongoing_frame(frame)
+            .expect("Failed to save ongoing frame");
+    }
+
+    #[test]
+    fn test_save_ongoing_frame_while_another_frame_is_ongoing() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let ongoing_frame = get_test_frame();
+        store
+            .save_ongoing_frame(ongoing_frame)
+            .expect("Failed to save first ongoing frame");
+
+        let new_ongoing_frame = get_test_frame();
+        store
+            .save_ongoing_frame(new_ongoing_frame)
+            .expect("Failed to overwrite ongoing frame, which is expected API behavior")
     }
 }

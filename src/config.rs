@@ -20,7 +20,7 @@ impl Default for Config {
         Self {
             data_store: match std::env::consts::OS {
                 "macos" => home.join("Library/Application Support/watson"),
-                "linux" => todo!(),
+                "linux" => home.join(".config/watson"),
                 _ => "/tmp/".into(),
             },
         }

@@ -9,6 +9,7 @@ mod common;
 mod config;
 mod frame;
 mod log;
+mod state;
 mod watson;
 
 use cli::CommandExecutor;

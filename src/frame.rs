@@ -8,7 +8,8 @@ use chrono_humanize::HumanTime;
 
 use crate::{
     common::NonEmptyString,
-    watson::{self, State},
+    state::State,
+    watson::{self},
 };
 
 /// Generate a unique ID for the frame using a hash of the current time

@@ -7,16 +7,23 @@ use chrono::DateTime;
 use chrono::Duration;
 use chrono::Local;
 use chrono::TimeZone;
+use chrono_humanize::HumanTime;
 use clap::{Parser, Subcommand};
 use log::info;
 
 use crate::common::NonEmptyString;
 use crate::frame::CompletedFrame;
 use crate::frame::Frame;
+use crate::frame::FrameEdit;
 use crate::frame::FrameStore;
 use crate::log::FrameLog;
-use crate::watson;
-use crate::watson::FrameEdit;
+use crate::state;
+use crate::state::Ongoing;
+use crate::state::StateStore;
+use crate::state::StateStoreBackend;
+use crate::state::StateStoreVariant;
+use crate::state::Stopped;
+use crate::state::get_state_store;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -126,10 +133,11 @@ fn parse_to_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
 }
 
 #[derive(Debug, Clone)]
-pub enum CliError<E> {
+pub enum CliError<E1, E2> {
     OngoingProject(NonEmptyString),
     InvalidProjectName,
-    FrameStoreError(E),
+    FrameStoreError(E1),
+    StateStoreError(E2),
     NoOngoingRecording,
     EditorNotSet,
     EditorError(String),
@@ -138,7 +146,7 @@ pub enum CliError<E> {
     InvalidFrame(Option<String>),
 }
 
-impl<E: Display> Display for CliError<E> {
+impl<E1: Display, E2: Display> Display for CliError<E1, E2> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CliError::OngoingProject(project) => {
@@ -149,6 +157,9 @@ impl<E: Display> Display for CliError<E> {
             }
             CliError::FrameStoreError(details) => {
                 write!(f, "Failed to store frame. details={}", details)
+            }
+            CliError::StateStoreError(details) => {
+                write!(f, "Failed to store state. details={}", details)
             }
             CliError::NoOngoingRecording => {
                 write!(f, "No project started")
@@ -182,7 +193,7 @@ pub struct CommandExecutor<T: FrameStore> {
     frame_store: T,
 }
 
-impl<T: FrameStore> CommandExecutor<T> {
+impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
     pub fn new(frame_store: T) -> Self {
         Self { frame_store }
     }
@@ -190,21 +201,48 @@ impl<T: FrameStore> CommandExecutor<T> {
     pub fn execute_command(
         &mut self,
         command: &Command,
-    ) -> Result<(), CliError<T::FrameStoreError>> {
+    ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         info!("Executing command: {:?}", command);
+        let state_store = get_state_store(&self.frame_store).map_err(CliError::StateStoreError)?;
         match command {
             Command::Start {
                 project,
                 tags,
                 no_gap,
-            } => self.start(project, tags, no_gap),
-            Command::Stop => self.stop(),
-            Command::Cancel => self.cancel(),
+            } => match state_store {
+                StateStoreVariant::Ongoing(state_store) => Err(CliError::OngoingProject(
+                    state_store
+                        .get_ongoing()
+                        .map_err(CliError::StateStoreError)?
+                        .project()
+                        .clone(),
+                )),
+                StateStoreVariant::Stopped(state_store) => {
+                    self.start(state_store, project, tags, no_gap)
+                }
+            },
+            Command::Stop => match state_store {
+                StateStoreVariant::Ongoing(state_store) => self.stop(state_store),
+                StateStoreVariant::Stopped(_) => Err(CliError::NoOngoingRecording),
+            },
+            Command::Cancel => match state_store {
+                StateStoreVariant::Ongoing(state_store) => {
+                    let ongoing_frame = state_store
+                        .get_ongoing()
+                        .map_err(CliError::StateStoreError)?;
+                    println!(
+                        "Canceling the timer for project {}",
+                        ongoing_frame.project()
+                    );
+                    state_store.cancel().map_err(CliError::StateStoreError)
+                }
+                StateStoreVariant::Stopped(_) => Err(CliError::NoOngoingRecording),
+            },
             Command::Edit { id } => {
                 if let Some(id) = id {
                     self.edit(id)
-                } else if self.frame_store.has_ongoing_frame() {
-                    self.edit_ongoing()
+                } else if let StateStoreVariant::Ongoing(state_store) = state_store {
+                    self.edit_ongoing(&state_store)
                 } else if let Some(f) = self.frame_store.get_last_frame() {
                     self.edit(f.frame().id())
                 } else {
@@ -212,7 +250,10 @@ impl<T: FrameStore> CommandExecutor<T> {
                 }
             }
             Command::Projects => self.list_projects(),
-            Command::Status => self.status(),
+            Command::Status => match state_store {
+                StateStoreVariant::Ongoing(state_store) => self.status(state_store),
+                StateStoreVariant::Stopped(_) => Err(CliError::NoOngoingRecording),
+            },
             Command::Log {
                 current: include_current,
                 from,
@@ -220,94 +261,66 @@ impl<T: FrameStore> CommandExecutor<T> {
             } => {
                 let from = from.unwrap_or(Local::now() - Duration::days(7));
                 let to = to.unwrap_or(Local::now());
-                self.show_log(from, to, *include_current)
+                self.show_log(from, to, *include_current, state_store)
             }
         }
     }
 
     fn start(
         &self,
+        state_store: StateStore<T, Stopped>,
         project: &String,
         tags: &[String],
         no_gap: &bool,
-    ) -> Result<(), CliError<T::FrameStoreError>> {
-        if let Some(ongoing_project_name) = self
-            .frame_store
-            .get_ongoing_frame()
-            .map(|f| f.project().clone())
-        {
-            Err(CliError::OngoingProject(ongoing_project_name))
-        } else {
-            let project =
-                NonEmptyString::new(&project.to_string()).ok_or(CliError::InvalidProjectName)?;
-            let tags = tags
-                .iter()
-                .filter_map(|tag| NonEmptyString::new(tag))
-                .collect();
-            let start = match no_gap {
-                true => {
-                    log::debug!("--no_gap given, finding last end time");
-                    match self.frame_store.get_last_frame() {
-                        Some(frame) => frame.end(),
-                        None => chrono::Local::now(),
-                    }
-                }
-                false => chrono::Local::now(),
-            };
-            let frame = Frame::new(project.clone(), None, Some(start), None, tags, None);
-            log::debug!("Starting frame. frame={:?}", frame);
-
-            // Write the frame to file
-            let result = self
-                .frame_store
-                .save_ongoing_frame(frame)
-                .map_err(CliError::FrameStoreError);
-            println!("Project {} started", project);
-            result
-        }
-    }
-
-    fn stop(&mut self) -> Result<(), CliError<T::FrameStoreError>> {
-        match &self.frame_store.get_ongoing_frame() {
-            None => Err(CliError::NoOngoingRecording),
-            Some(frame) => {
-                let mut frame = frame.clone();
-                let completed_frame = frame.set_end(chrono::Local::now());
-                let frame_project = completed_frame.frame().project().clone();
-                let frame_start = *completed_frame.frame().start();
-                match self.frame_store.save_frame(completed_frame) {
-                    Err(e) => Err(CliError::FrameStoreError(e)),
-                    Ok(_) => {
-                        let result = self
-                            .frame_store
-                            .clear_ongoing_frame()
-                            .map_err(CliError::FrameStoreError);
-                        println!(
-                            "Stopping project {}, started {}",
-                            frame_project, frame_start
-                        );
-                        result
+    ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
+        let project =
+            NonEmptyString::new(&project.to_string()).ok_or(CliError::InvalidProjectName)?;
+        let tags = tags
+            .iter()
+            .filter_map(|tag| NonEmptyString::new(tag))
+            .collect();
+        let start = match no_gap {
+            true => {
+                log::debug!("--no_gap given, finding last end time");
+                match self.frame_store.get_last_frame() {
+                    Some(frame) => frame.end(),
+                    None => {
+                        log::info!("--no_gap given, but no previous frame. Ignoring --no_gap");
+                        chrono::Local::now()
                     }
                 }
             }
-        }
+            false => chrono::Local::now(),
+        };
+
+        let ongoing_frame = state_store
+            .start(project.clone(), start, tags)
+            .map_err(CliError::StateStoreError)?
+            .frame;
+        log::debug!("Starting frame. frame={:?}", ongoing_frame);
+        println!("Project {} started", project);
+        Ok(())
     }
 
-    fn cancel(&self) -> Result<(), CliError<T::FrameStoreError>> {
-        match &self.frame_store.get_ongoing_frame() {
-            None => Err(CliError::NoOngoingRecording),
-            Some(state) => {
-                println!("Canceling the timer for project {}", state.project());
-                self.frame_store
-                    .clear_ongoing_frame()
-                    .map_err(CliError::FrameStoreError)
-            }
-        }
+    fn stop(
+        &self,
+        state_store: StateStore<T, Ongoing>,
+    ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
+        let completed_frame = state_store.stop().map_err(CliError::StateStoreError)?.frame;
+        println!(
+            "Stopping project {}, started {}",
+            completed_frame.frame().project(),
+            completed_frame.frame().start()
+        );
+        self.frame_store
+            .save_frame(completed_frame)
+            .map_err(CliError::FrameStoreError)?;
+        Ok(())
     }
 
     fn edit_frame_in_editor(
-        frame_edit: &watson::FrameEdit,
-    ) -> Result<FrameEdit, CliError<T::FrameStoreError>> {
+        frame_edit: &FrameEdit,
+    ) -> Result<FrameEdit, CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         let editor = env::var_os("EDITOR").ok_or(CliError::EditorNotSet)?;
         let tmp_file_path = std::env::temp_dir().join("watsup.tmp");
         let tmp_file_write =
@@ -338,15 +351,17 @@ impl<T: FrameStore> CommandExecutor<T> {
         }
     }
 
-    fn edit(&mut self, frame_id: &str) -> Result<(), CliError<T::FrameStoreError>> {
+    fn edit(
+        &mut self,
+        frame_id: &str,
+    ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         let frame = self
             .frame_store
             .get_frame(frame_id)
             .map_err(CliError::FrameStoreError)?
             .ok_or(CliError::InvalidFrame(Some(frame_id.into())))?;
 
-        let updated_frame_edit =
-            Self::edit_frame_in_editor(&watson::FrameEdit::from(frame.frame()))?;
+        let updated_frame_edit = Self::edit_frame_in_editor(&FrameEdit::from(frame.frame()))?;
 
         let mut frame = frame.frame().clone();
         frame.update_from(updated_frame_edit);
@@ -359,22 +374,24 @@ impl<T: FrameStore> CommandExecutor<T> {
             .map_err(CliError::FrameStoreError)
     }
 
-    fn edit_ongoing(&mut self) -> Result<(), CliError<T::FrameStoreError>> {
-        let mut ongoing_frame = self
-            .frame_store
-            .get_ongoing_frame()
-            .ok_or(CliError::InvalidFrame(None))?;
+    fn edit_ongoing(
+        &self,
+        state_store: &StateStore<T, state::Ongoing>,
+    ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
+        let mut ongoing_frame = state_store
+            .get_ongoing()
+            .map_err(CliError::StateStoreError)?;
 
-        let frame_edit = watson::FrameEdit::from(&ongoing_frame);
+        let frame_edit = FrameEdit::from(&ongoing_frame);
         let frame_edit = Self::edit_frame_in_editor(&frame_edit)?;
 
         ongoing_frame.update_from(frame_edit);
-        self.frame_store
-            .save_ongoing_frame(ongoing_frame)
-            .map_err(CliError::FrameStoreError)
+        state_store
+            .update_ongoing(ongoing_frame)
+            .map_err(CliError::StateStoreError)
     }
 
-    fn list_projects(&self) -> Result<(), CliError<T::FrameStoreError>> {
+    fn list_projects(&self) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         let projects = self
             .frame_store
             .get_projects()
@@ -385,14 +402,22 @@ impl<T: FrameStore> CommandExecutor<T> {
         Ok(())
     }
 
-    fn status(&self) -> Result<(), CliError<<T as FrameStore>::FrameStoreError>> {
-        match self.frame_store.get_ongoing_frame() {
-            None => Err(CliError::NoOngoingRecording),
-            Some(frame) => {
-                println!("{}", frame);
-                Ok(())
-            }
-        }
+    fn status(
+        &self,
+        state_store: StateStore<T, Ongoing>,
+    ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
+        let ongoing_frame = state_store
+            .get_ongoing()
+            .map_err(CliError::StateStoreError)?;
+        let frame = Frame::from(ongoing_frame);
+        let completed_frame = frame.set_end(Local::now());
+        println!(
+            "Project {} started {} ({})",
+            completed_frame.frame().project(),
+            HumanTime::from(completed_frame.frame().start().clone()),
+            completed_frame.frame().start()
+        );
+        Ok(())
     }
 
     fn show_log(
@@ -400,14 +425,18 @@ impl<T: FrameStore> CommandExecutor<T> {
         from: DateTime<Local>,
         to: DateTime<Local>,
         include_current: bool,
-    ) -> Result<(), CliError<<T as FrameStore>::FrameStoreError>> {
+        state_store: StateStoreVariant<T>,
+    ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         let mut frames = self
             .frame_store
             .get_frames(from, to)
             .map_err(CliError::FrameStoreError)?;
 
-        if include_current && let Some(ongoing_frame) = self.frame_store.get_ongoing_frame() {
-            let frame = ongoing_frame.clone().set_end(Local::now());
+        if include_current && let StateStoreVariant::Ongoing(state_store) = state_store {
+            let ongoing_frame = state_store
+                .get_ongoing()
+                .map_err(CliError::StateStoreError)?;
+            let frame = Frame::from(ongoing_frame).set_end(Local::now());
             frames.push(frame);
         }
 

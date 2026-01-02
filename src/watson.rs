@@ -1,9 +1,9 @@
 // The compatiblity layer to watson (https://github.com/jazzband/Watson/)
 //
 
-use std::{collections::HashSet, fmt::Display, fs::File, io::Write};
+use std::{collections::HashSet, fmt::Display, fs::File, io::Read};
 
-use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize, ser::SerializeSeq};
 use serde_json::json;
 
@@ -11,7 +11,7 @@ use crate::{
     common::NonEmptyString,
     config::Config,
     frame::{self, CompletedFrame, FrameStore},
-    state::State,
+    state::{OngoingFrame as WatsupOngoingFrame, StateStoreBackend},
 };
 
 #[derive(Clone)]
@@ -22,6 +22,33 @@ pub struct Frame {
     id: String,
     tags: Vec<NonEmptyString>,
     last_edit_timestamp: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OngoingFrame {
+    project: NonEmptyString,
+    start: i64,
+    tags: Vec<NonEmptyString>,
+}
+
+impl From<OngoingFrame> for WatsupOngoingFrame {
+    fn from(ongoing_frame: OngoingFrame) -> Self {
+        let start = chrono::Local
+            .timestamp_opt(ongoing_frame.start, 0)
+            .single()
+            .expect("Invalid timestamp for OngoingFrame::start");
+        WatsupOngoingFrame::new(ongoing_frame.project, start, ongoing_frame.tags)
+    }
+}
+
+impl From<&WatsupOngoingFrame> for OngoingFrame {
+    fn from(value: &WatsupOngoingFrame) -> Self {
+        OngoingFrame {
+            project: value.project().clone(),
+            start: value.start().timestamp(),
+            tags: value.tags().to_vec(),
+        }
+    }
 }
 
 impl From<frame::CompletedFrame> for Frame {
@@ -126,7 +153,7 @@ impl<'de> Deserialize<'de> for Frame {
 }
 
 #[cfg(test)]
-mod tests {
+mod frame_serialization_tests {
     use super::*;
     use serde_json;
 
@@ -185,50 +212,28 @@ mod tests {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-/// Frame representation used for editing a frame
-pub struct FrameEdit {
-    project: NonEmptyString,
-    start: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stop: Option<String>,
-    tags: Vec<NonEmptyString>,
-}
+#[cfg(test)]
+mod state_serializaton_tests {
+    use crate::{common::NonEmptyString, watson::OngoingFrame};
+    use chrono::Local;
 
-impl FrameEdit {
-    pub fn project(&self) -> &NonEmptyString {
-        &self.project
-    }
+    #[test]
+    fn test_state_load_success() {
+        // Create a temporary file with valid state data
 
-    pub fn start(&self) -> DateTime<Local> {
-        let naive = NaiveDateTime::parse_from_str(&self.start, EDIT_DATETIME_FORMAT).unwrap();
-        naive.and_local_timezone(Local).single().unwrap()
-    }
+        let ongoing_frame = OngoingFrame {
+            project: NonEmptyString::new("Project").unwrap(),
+            start: Local::now().timestamp(),
+            tags: vec![],
+        };
 
-    pub fn stop(&self) -> Option<DateTime<Local>> {
-        self.stop
-            .clone()
-            .map(|s| NaiveDateTime::parse_from_str(&s, EDIT_DATETIME_FORMAT).unwrap())
-            .map(|d| d.and_local_timezone(Local).unwrap())
-    }
+        let json = serde_json::to_string(&ongoing_frame).unwrap();
 
-    pub fn tags(&self) -> &[NonEmptyString] {
-        &self.tags
-    }
-}
+        let roundtrip_ongoing_frame: OngoingFrame = serde_json::from_str(&json).unwrap();
 
-const EDIT_DATETIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
-
-impl From<&frame::Frame> for FrameEdit {
-    fn from(frame: &frame::Frame) -> Self {
-        FrameEdit {
-            project: frame.project().clone(),
-            start: frame.start().format(EDIT_DATETIME_FORMAT).to_string(),
-            stop: frame
-                .end()
-                .and_then(|e| Some(e.format(EDIT_DATETIME_FORMAT).to_string())),
-            tags: Vec::from(frame.tags()),
-        }
+        assert_eq!(ongoing_frame.project, roundtrip_ongoing_frame.project);
+        assert_eq!(ongoing_frame.start, roundtrip_ongoing_frame.start);
+        assert_eq!(ongoing_frame.tags, roundtrip_ongoing_frame.tags);
     }
 }
 
@@ -327,22 +332,6 @@ impl FrameStore for Store {
         }
     }
 
-    fn save_ongoing_frame(&self, frame: frame::Frame) -> Result<(), Self::FrameStoreError> {
-        let state = State::from(frame);
-        state
-            .save(&self.config.get_state_path())
-            .map_err(StoreError::IO)
-    }
-
-    fn clear_ongoing_frame(&self) -> Result<(), Self::FrameStoreError> {
-        let mut file = File::create(self.config.get_state_path()).map_err(StoreError::IO)?;
-        file.write_all(b"{}").map_err(StoreError::IO)
-    }
-
-    fn get_ongoing_frame(&self) -> Option<frame::Frame> {
-        State::load(&self.config.get_state_path()).map(frame::Frame::from)
-    }
-
     fn get_frame(&self, frame_id: &str) -> Result<Option<CompletedFrame>, Self::FrameStoreError> {
         let frames = self.load()?;
         Ok(frames
@@ -361,6 +350,38 @@ impl FrameStore for Store {
             .into_iter()
             .filter(|f| *f.frame().start() >= start && f.end() <= end)
             .collect())
+    }
+}
+
+impl StateStoreBackend for Store {
+    type StateStoreBackendError = StoreError;
+
+    fn get_state(&self) -> Result<Option<WatsupOngoingFrame>, Self::StateStoreBackendError> {
+        let file_path = self.config.get_state_path();
+        if !file_path.exists() {
+            return Ok(None);
+        }
+
+        let mut file = File::open(&self.config.get_state_path())?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        let ongoing_frame: OngoingFrame =
+            serde_json::from_str(&contents).map_err(StoreError::from)?;
+        Ok(Some(ongoing_frame.into()))
+    }
+
+    fn store_state(&self, state: &WatsupOngoingFrame) -> Result<(), Self::StateStoreBackendError> {
+        let ongoing_frame = OngoingFrame::from(state);
+        let mut file = File::create(&self.config.get_state_path())?;
+        serde_json::to_writer(&mut file, &ongoing_frame)?;
+        Ok(())
+    }
+
+    fn clear_state(&self) -> Result<bool, Self::StateStoreBackendError> {
+        let state_path = &self.config.get_state_path();
+        let exists = state_path.exists();
+        std::fs::remove_file(state_path)?;
+        Ok(exists)
     }
 }
 
@@ -394,16 +415,17 @@ mod store_tests {
         get_test_frame_with_project("project name".try_into().unwrap())
     }
 
+    fn get_test_ongoing_frame() -> WatsupOngoingFrame {
+        let start = chrono::Local.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+        WatsupOngoingFrame::new("project name".try_into().unwrap(), start, vec![])
+    }
+
     fn get_completed_test_frame_with_project(project: NonEmptyString) -> CompletedFrame {
-        let mut frame = get_test_frame_with_project(project);
-        frame.set_end(chrono::Local::now());
-        CompletedFrame::from_frame(frame).unwrap()
+        get_test_frame_with_project(project).set_end(Local::now())
     }
 
     fn get_completed_test_frame() -> CompletedFrame {
-        let mut frame = get_test_frame();
-        frame.set_end(chrono::Local::now());
-        CompletedFrame::from_frame(frame).unwrap()
+        get_test_frame().set_end(Local::now())
     }
 
     #[test]
@@ -427,40 +449,29 @@ mod store_tests {
     }
 
     #[test]
-    fn test_has_no_ongoing_frame_by_default() {
-        let test_config = get_test_config();
-        let store = Store::new(test_config.config);
-        assert!(store.get_ongoing_frame().is_none());
-    }
-
-    #[test]
     fn test_has_ongoing_frame_after_storing_one() {
         let test_config = get_test_config();
-        let store = Store::new(test_config.config);
-        let frame = get_test_frame();
-        assert!(store.get_ongoing_frame().is_none());
-        store
-            .save_ongoing_frame(frame)
-            .expect("Failed to save ongoing frame");
-        assert!(store.get_ongoing_frame().is_some());
-        assert!(store.has_ongoing_frame())
+        let backend: &dyn StateStoreBackend<StateStoreBackendError = StoreError> =
+            &Store::new(test_config.config);
+        let ongoing_frame = get_test_ongoing_frame();
+
+        backend.store_state(&ongoing_frame).unwrap();
+
+        let fetched_ongoing_frame = backend.get_state().unwrap();
+        assert!(fetched_ongoing_frame.is_some());
+        let fetched_ongoing_frame = fetched_ongoing_frame.unwrap();
+
+        assert_eq!(fetched_ongoing_frame.project(), ongoing_frame.project());
+        assert_eq!(fetched_ongoing_frame.start(), ongoing_frame.start());
+        assert_eq!(fetched_ongoing_frame.tags(), ongoing_frame.tags());
     }
 
     #[test]
-    fn test_clear_ongoing_frame() {
+    fn get_state_with_no_ongoing_frame() {
         let test_config = get_test_config();
-        let store = Store::new(test_config.config);
-        let frame = get_test_frame();
-        store
-            .save_ongoing_frame(frame)
-            .expect("Failed to save ongoing frame");
-        assert!(store.get_ongoing_frame().is_some());
-        assert!(store.has_ongoing_frame());
-        store
-            .clear_ongoing_frame()
-            .expect("Failed to clear ongoing frame");
-        assert!(store.get_ongoing_frame().is_none());
-        assert!(!store.has_ongoing_frame());
+        let backend: &dyn StateStoreBackend<StateStoreBackendError = StoreError> =
+            &Store::new(test_config.config);
+        assert!(backend.get_state().unwrap().is_none())
     }
 
     #[test]
@@ -503,31 +514,5 @@ mod store_tests {
 
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0], project);
-    }
-
-    #[test]
-    fn test_save_ongoing_frame_with_no_ongoing_frame() {
-        let test_config = get_test_config();
-        let store = Store::new(test_config.config);
-        let frame = get_test_frame();
-
-        store
-            .save_ongoing_frame(frame)
-            .expect("Failed to save ongoing frame");
-    }
-
-    #[test]
-    fn test_save_ongoing_frame_while_another_frame_is_ongoing() {
-        let test_config = get_test_config();
-        let store = Store::new(test_config.config);
-        let ongoing_frame = get_test_frame();
-        store
-            .save_ongoing_frame(ongoing_frame)
-            .expect("Failed to save first ongoing frame");
-
-        let new_ongoing_frame = get_test_frame();
-        store
-            .save_ongoing_frame(new_ongoing_frame)
-            .expect("Failed to overwrite ongoing frame, which is expected API behavior")
     }
 }

@@ -3,14 +3,10 @@ use std::{
     hash::{DefaultHasher, Hasher},
 };
 
-use chrono::{DateTime, Duration, Local, TimeZone};
-use chrono_humanize::HumanTime;
+use chrono::{DateTime, Duration, Local, NaiveDateTime};
+use serde::{Deserialize, Serialize};
 
-use crate::{
-    common::NonEmptyString,
-    state::State,
-    watson::{self},
-};
+use crate::{common::NonEmptyString, state::OngoingFrame};
 
 /// Generate a unique ID for the frame using a hash of the current time
 fn generate_id() -> String {
@@ -63,23 +59,23 @@ impl Frame {
         }
     }
 
-    pub fn from(state: State) -> Self {
+    pub fn from(state: OngoingFrame) -> Self {
         Frame {
             project: state.project().clone(),
             id: generate_id(),
-            start: chrono::Local.timestamp_opt(state.start(), 0).unwrap(),
+            start: *state.start(),
             end: None,
             tags: state.tags().into(),
             last_edit: chrono::Local::now(),
         }
     }
 
-    pub fn set_end(&mut self, end: chrono::DateTime<chrono::Local>) -> CompletedFrame {
+    pub fn set_end(mut self, end: chrono::DateTime<chrono::Local>) -> CompletedFrame {
         self.end = Some(end);
-        CompletedFrame::from_frame(self.clone()).unwrap()
+        CompletedFrame::from_frame(self).unwrap()
     }
 
-    pub fn update_from(&mut self, edit: watson::FrameEdit) {
+    pub fn update_from(&mut self, edit: FrameEdit) {
         self.project = edit.project().clone();
         self.start = edit.start();
         self.end = edit.stop();
@@ -109,18 +105,6 @@ impl Frame {
 
     pub fn end(&self) -> &Option<DateTime<Local>> {
         &self.end
-    }
-}
-
-impl Display for Frame {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Project {} started {} ({})",
-            self.project,
-            HumanTime::from(self.start),
-            self.start
-        )
     }
 }
 
@@ -172,14 +156,76 @@ impl Display for CompletedFrame {
         let time_format = "%H:%M";
         write!(
             f,
-            "{:.8}  {} to {}  {:>2}h {:>2}m  {}",
+            "{:.8}  {} to {}  {:>2}h {:>2}m {:>2}s  {}",
             self.frame().id(),
             self.frame().start().time().format(time_format),
             self.end().time().format(time_format),
             self.duration().num_hours(),
             self.duration().num_minutes() - self.duration().num_hours() * 60,
+            self.duration().num_seconds() - self.duration().num_minutes() * 60,
             self.frame().project()
         )
+    }
+}
+
+const EDIT_DATETIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
+#[derive(Serialize, Deserialize, Debug)]
+/// Frame representation used for editing a frame
+pub struct FrameEdit {
+    project: NonEmptyString,
+    start: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop: Option<String>,
+    tags: Vec<NonEmptyString>,
+}
+
+impl FrameEdit {
+    pub fn project(&self) -> &NonEmptyString {
+        &self.project
+    }
+
+    pub fn start(&self) -> DateTime<Local> {
+        let naive = NaiveDateTime::parse_from_str(&self.start, EDIT_DATETIME_FORMAT).unwrap();
+        naive.and_local_timezone(Local).single().unwrap()
+    }
+
+    pub fn stop(&self) -> Option<DateTime<Local>> {
+        self.stop
+            .clone()
+            .map(|s| NaiveDateTime::parse_from_str(&s, EDIT_DATETIME_FORMAT).unwrap())
+            .map(|d| d.and_local_timezone(Local).unwrap())
+    }
+
+    pub fn tags(&self) -> &[NonEmptyString] {
+        &self.tags
+    }
+}
+
+impl From<&Frame> for FrameEdit {
+    fn from(frame: &Frame) -> Self {
+        FrameEdit {
+            project: frame.project().clone(),
+            start: frame.start().format(EDIT_DATETIME_FORMAT).to_string(),
+            stop: frame
+                .end()
+                .and_then(|e| Some(e.format(EDIT_DATETIME_FORMAT).to_string())),
+            tags: Vec::from(frame.tags()),
+        }
+    }
+}
+
+impl From<&OngoingFrame> for FrameEdit {
+    fn from(ongoing_frame: &OngoingFrame) -> Self {
+        FrameEdit {
+            project: ongoing_frame.project().clone(),
+            start: ongoing_frame
+                .start()
+                .format(EDIT_DATETIME_FORMAT)
+                .to_string(),
+            stop: None,
+            tags: Vec::from(ongoing_frame.tags()),
+        }
     }
 }
 
@@ -207,19 +253,4 @@ pub trait FrameStore {
         start: DateTime<Local>,
         end: DateTime<Local>,
     ) -> Result<Vec<CompletedFrame>, Self::FrameStoreError>;
-
-    /// Save a frame that is currently ongoing to the store.
-    /// If there is already an ongoing frame this method will overwrite the ongoing frame.
-    fn save_ongoing_frame(&self, frame: Frame) -> Result<(), Self::FrameStoreError>;
-
-    /// Clear an ongoing frame if there is one.
-    /// Will return an error if there is no ongoing frame to clear from the store.
-    fn clear_ongoing_frame(&self) -> Result<(), Self::FrameStoreError>;
-
-    /// Get the ongoing frame if there is one.
-    fn get_ongoing_frame(&self) -> Option<Frame>;
-
-    fn has_ongoing_frame(&self) -> bool {
-        self.get_ongoing_frame().is_some()
-    }
 }

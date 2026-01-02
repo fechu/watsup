@@ -39,10 +39,11 @@ impl<'a> Display for FrameLog<'a> {
             writeln!(f, "")?;
             writeln!(
                 f,
-                "{} ({}h {}min)",
+                "{} ({}h {}min {}s)",
                 day.format("%A %d %B %Y"),
                 total_duration.unwrap().num_hours(),
                 total_duration.unwrap().num_minutes() - total_duration.unwrap().num_hours() * 60,
+                total_duration.unwrap().num_seconds() - total_duration.unwrap().num_minutes() * 60,
             )?;
             for frame in frames {
                 writeln!(f, "  {}", frame)?;

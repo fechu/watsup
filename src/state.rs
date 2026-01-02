@@ -9,9 +9,12 @@ use crate::{
 /// This needs to be implemented by specific storage. To actually save and load state, use `StateStore`.
 pub trait StateStoreBackend {
     type StateStoreBackendError;
-    fn get_state(&self) -> Result<Option<OngoingFrame>, Self::StateStoreBackendError>;
-    fn store_state(&self, state: &OngoingFrame) -> Result<(), Self::StateStoreBackendError>;
-    fn clear_state(&self) -> Result<bool, Self::StateStoreBackendError>;
+    /// Get the currently ongoing frame, if there is one. Returns None if there is none
+    fn get(&self) -> Result<Option<OngoingFrame>, Self::StateStoreBackendError>;
+    /// Store an ongoing frame. Overwrites an existing ongoing frame.
+    fn store(&self, state: &OngoingFrame) -> Result<(), Self::StateStoreBackendError>;
+    /// Clear an ongoing frame. The returned boolean indicates whether there was an ongoing frame. True if there was, false if there was not.
+    fn clear(&self) -> Result<bool, Self::StateStoreBackendError>;
 }
 
 pub trait TrackingState {}
@@ -20,6 +23,9 @@ pub struct Stopped {}
 impl TrackingState for Ongoing {}
 impl TrackingState for Stopped {}
 
+// The state store is the wrapper around the StateStoreBackend to protect from invalid access.
+// Type state pattern is used to enable and disable methods of the StateStore based on whether there is an
+// ongoing frame or not.
 pub struct StateStore<'a, S: StateStoreBackend, T: TrackingState> {
     backend: &'a S,
     marker: std::marker::PhantomData<T>,
@@ -48,7 +54,7 @@ where
     pub fn stop(self) -> Result<FrameStopped<'a, S>, S::StateStoreBackendError> {
         let frame = Frame::from(self.get_ongoing()?);
         let completed_frame = frame.set_end(Local::now());
-        self.backend.clear_state()?;
+        self.backend.clear()?;
         Ok(FrameStopped {
             frame: completed_frame,
             store: StateStore::new(self.backend),
@@ -56,7 +62,7 @@ where
     }
 
     pub fn cancel(self) -> Result<(), S::StateStoreBackendError> {
-        self.backend.clear_state()?;
+        self.backend.clear()?;
         Ok(())
     }
 
@@ -64,14 +70,14 @@ where
         &self,
         ongoing_frame: OngoingFrame,
     ) -> Result<(), S::StateStoreBackendError> {
-        self.backend.store_state(&ongoing_frame)?;
+        self.backend.store(&ongoing_frame)?;
         Ok(())
     }
 
     pub fn get_ongoing(&self) -> Result<OngoingFrame, S::StateStoreBackendError> {
         Ok(self
             .backend
-            .get_state()?
+            .get()?
             .expect("Ongoing StateStore does not have ongoing frame. This may not happen!"))
     }
 }
@@ -94,7 +100,7 @@ where
         tags: Vec<NonEmptyString>,
     ) -> Result<FrameStarted<'a, S>, S::StateStoreBackendError> {
         let ongoing_frame = OngoingFrame::new(project, start, tags);
-        self.backend.store_state(&ongoing_frame)?;
+        self.backend.store(&ongoing_frame)?;
         Ok(FrameStarted {
             frame: ongoing_frame,
             store: StateStore::new(self.backend),
@@ -107,16 +113,20 @@ pub enum StateStoreVariant<'a, S: StateStoreBackend> {
     Stopped(StateStore<'a, S, Stopped>),
 }
 
+/// Getter for a StateStore, based on a backend.
+/// Use this method to get the StateStore in the currently active state.
 pub fn get_state_store<'a, S: StateStoreBackend>(
     backend: &'a S,
 ) -> Result<StateStoreVariant<'a, S>, S::StateStoreBackendError> {
-    match backend.get_state()? {
+    match backend.get()? {
         Some(_) => Ok(StateStoreVariant::Ongoing(StateStore::new(backend))),
         None => Ok(StateStoreVariant::Stopped(StateStore::new(backend))),
     }
 }
 
 #[derive(Debug)]
+///Representation of a currently ongoing frame
+/// The frame is not completed and the storing of this is delegated to the StateStoreBackend
 pub struct OngoingFrame {
     project: ProjectName,
     start: DateTime<Local>,

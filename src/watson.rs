@@ -356,7 +356,7 @@ impl FrameStore for Store {
 impl StateStoreBackend for Store {
     type StateStoreBackendError = StoreError;
 
-    fn get_state(&self) -> Result<Option<WatsupOngoingFrame>, Self::StateStoreBackendError> {
+    fn get(&self) -> Result<Option<WatsupOngoingFrame>, Self::StateStoreBackendError> {
         let file_path = self.config.get_state_path();
         if !file_path.exists() {
             return Ok(None);
@@ -370,14 +370,14 @@ impl StateStoreBackend for Store {
         Ok(Some(ongoing_frame.into()))
     }
 
-    fn store_state(&self, state: &WatsupOngoingFrame) -> Result<(), Self::StateStoreBackendError> {
+    fn store(&self, state: &WatsupOngoingFrame) -> Result<(), Self::StateStoreBackendError> {
         let ongoing_frame = OngoingFrame::from(state);
         let mut file = File::create(&self.config.get_state_path())?;
         serde_json::to_writer(&mut file, &ongoing_frame)?;
         Ok(())
     }
 
-    fn clear_state(&self) -> Result<bool, Self::StateStoreBackendError> {
+    fn clear(&self) -> Result<bool, Self::StateStoreBackendError> {
         let state_path = &self.config.get_state_path();
         let exists = state_path.exists();
         std::fs::remove_file(state_path)?;
@@ -459,9 +459,9 @@ mod store_tests {
             &Store::new(test_config.config);
         let ongoing_frame = get_test_ongoing_frame();
 
-        backend.store_state(&ongoing_frame).unwrap();
+        backend.store(&ongoing_frame).unwrap();
 
-        let fetched_ongoing_frame = backend.get_state().unwrap();
+        let fetched_ongoing_frame = backend.get().unwrap();
         assert!(fetched_ongoing_frame.is_some());
         let fetched_ongoing_frame = fetched_ongoing_frame.unwrap();
 
@@ -475,7 +475,7 @@ mod store_tests {
         let test_config = get_test_config();
         let backend: &dyn StateStoreBackend<StateStoreBackendError = StoreError> =
             &Store::new(test_config.config);
-        assert!(backend.get_state().unwrap().is_none())
+        assert!(backend.get().unwrap().is_none())
     }
 
     #[test]

@@ -9,10 +9,22 @@
     "program": "$ZED_WORKTREE_ROOT/target/debug/watsup",
     "build": {
       "command": "cargo",
-      "args": ["build"]
+      "args": ["build"],
     },
     "adapter": "CodeLLDB",
     "sourceLanguages": ["rust"],
-    "args": ["start", "foo"]
-  }
+    "args": ["start", "foo"],
+  },
+  {
+    "request": "launch",
+    "label": "watson stop",
+    "program": "$ZED_WORKTREE_ROOT/target/debug/watsup",
+    "build": {
+      "command": "cargo",
+      "args": ["build"],
+    },
+    "adapter": "CodeLLDB",
+    "sourceLanguages": ["rust"],
+    "args": ["stop"],
+  },
 ]

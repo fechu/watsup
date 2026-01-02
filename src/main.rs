@@ -11,7 +11,11 @@ mod config;
 mod frame;
 mod log;
 mod state;
-mod watson;
+mod stores {
+    #[cfg(test)]
+    pub mod in_memory_store;
+    pub mod watson;
+}
 
 use cli::CommandExecutor;
 
@@ -37,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = cli::Cli::parse();
     let config = config::Config::default();
-    let frame_store = watson::Store::new(config);
+    let frame_store = stores::watson::Store::new(config);
 
     let mut command_executor = CommandExecutor::new(frame_store);
     if let Err(error) = command_executor.execute_command(&cli.command) {

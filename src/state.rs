@@ -127,7 +127,7 @@ pub fn get_state_store<'a, S: StateStoreBackend>(
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 ///Representation of a currently ongoing frame
 /// The frame is not completed and the storing of this is delegated to the StateStoreBackend
 pub struct OngoingFrame {

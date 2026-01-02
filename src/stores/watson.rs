@@ -217,7 +217,7 @@ mod frame_serialization_tests {
 
 #[cfg(test)]
 mod state_serializaton_tests {
-    use crate::{common::NonEmptyString, watson::OngoingFrame};
+    use crate::{common::NonEmptyString, stores::watson::OngoingFrame};
     use chrono::Local;
 
     #[test]

@@ -154,6 +154,8 @@ fn parse_to_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
 }
 
 #[derive(Debug, Clone)]
+/// Any kind of error the CLI ever produces
+/// Errors from the FrameStore and the StateStore are wrapped in the respective errors.
 pub enum CliError<E1, E2> {
     OngoingProject(ProjectName),
     InvalidProjectName,
@@ -213,14 +215,14 @@ impl<E1: Display, E2: Display> Display for CliError<E1, E2> {
 }
 
 /// The class responsible for executing commands
-pub struct CommandExecutor<T: FrameStore> {
+pub struct CommandExecutor<T: FrameStore + StateStoreBackend> {
     /// The place where frames are stored
-    frame_store: T,
+    store: T,
 }
 
 impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
-    pub fn new(frame_store: T) -> Self {
-        Self { frame_store }
+    pub fn new(store: T) -> Self {
+        Self { store }
     }
 
     pub fn execute_command(
@@ -228,7 +230,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
         command: &Command,
     ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         info!("Executing command: {:?}", command);
-        let state_store = get_state_store(&self.frame_store).map_err(CliError::StateStoreError)?;
+        let state_store = get_state_store(&self.store).map_err(CliError::StateStoreError)?;
         match command {
             Command::Start {
                 project,
@@ -274,7 +276,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
                     self.edit(id)
                 } else if let StateStoreVariant::Ongoing(state_store) = state_store {
                     self.edit_ongoing(&state_store)
-                } else if let Some(f) = self.frame_store.get_last_frame() {
+                } else if let Some(f) = self.store.get_last_frame() {
                     self.edit(f.frame().id())
                 } else {
                     Err(CliError::InvalidFrame(None))
@@ -314,7 +316,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
         let start = match no_gap {
             true => {
                 log::debug!("--no_gap given, finding last end time");
-                match self.frame_store.get_last_frame() {
+                match self.store.get_last_frame() {
                     Some(frame) => frame.end(),
                     None => {
                         log::info!("--no_gap given, but no previous frame. Ignoring --no_gap");
@@ -349,7 +351,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
             completed_frame.end(),
             completed_frame.frame().start()
         );
-        self.frame_store
+        self.store
             .save_frame(&completed_frame)
             .map_err(CliError::FrameStoreError)?;
         Ok(())
@@ -393,7 +395,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
         frame_id: &str,
     ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         let frame = self
-            .frame_store
+            .store
             .get_frame(frame_id)
             .map_err(CliError::FrameStoreError)?
             .ok_or(CliError::InvalidFrame(Some(frame_id.into())))?;
@@ -406,7 +408,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
             "Updated frame successfully. Writing updates to disk. frame={:?}",
             frame
         );
-        self.frame_store
+        self.store
             .save_frame(&CompletedFrame::from_frame(frame).unwrap())
             .map_err(CliError::FrameStoreError)
     }
@@ -430,7 +432,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
 
     fn list_projects(&self) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         let projects = self
-            .frame_store
+            .store
             .get_projects()
             .map_err(CliError::FrameStoreError)?;
         for project in projects {
@@ -465,7 +467,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
         state_store: StateStoreVariant<T>,
     ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         let mut frames = self
-            .frame_store
+            .store
             .get_frames(from, to)
             .map_err(CliError::FrameStoreError)?;
 

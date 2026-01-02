@@ -36,7 +36,6 @@ impl<'a> Display for FrameLog<'a> {
         for day in days {
             let frames = grouped_by_day.get(day).unwrap();
             let total_duration = frames.iter().map(|f| f.duration()).reduce(|f1, f2| f1 + f2);
-            writeln!(f, "")?;
             writeln!(
                 f,
                 "{} ({}h {}min {}s)",

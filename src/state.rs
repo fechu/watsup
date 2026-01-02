@@ -56,7 +56,7 @@ where
         at: &DateTime<Local>,
     ) -> Result<FrameStopped<'a, S>, S::StateStoreBackendError> {
         let frame = Frame::from(self.get_ongoing()?);
-        let completed_frame = frame.set_end(at.clone());
+        let completed_frame = frame.set_end(*at);
         self.backend.clear()?;
         Ok(FrameStopped {
             frame: completed_frame,

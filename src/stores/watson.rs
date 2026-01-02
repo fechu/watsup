@@ -365,7 +365,7 @@ impl StateStoreBackend for Store {
             return Ok(None);
         }
 
-        let mut file = File::open(&self.config.get_state_path())?;
+        let mut file = File::open(self.config.get_state_path())?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
         Ok(match serde_json::from_str::<OngoingFrame>(&contents) {
@@ -380,7 +380,7 @@ impl StateStoreBackend for Store {
 
     fn store(&self, state: &WatsupOngoingFrame) -> Result<(), Self::StateStoreBackendError> {
         let ongoing_frame = OngoingFrame::from(state);
-        let mut file = File::create(&self.config.get_state_path())?;
+        let mut file = File::create(self.config.get_state_path())?;
         serde_json::to_writer(&mut file, &ongoing_frame)?;
         Ok(())
     }

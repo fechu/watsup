@@ -378,7 +378,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
         println!(
             "Project {} started {} ({})",
             completed_frame.frame().project(),
-            HumanTime::from(completed_frame.frame().start().clone()),
+            HumanTime::from(*completed_frame.frame().start()),
             completed_frame.frame().start()
         );
         Ok(())

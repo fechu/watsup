@@ -203,7 +203,10 @@ mod frame_serialization_tests {
         let frame: Frame = serde_json::from_str(json).unwrap();
         assert_eq!(frame.start_timestamp, 1620000000);
         assert_eq!(frame.end_timestamp, 1620003600);
-        assert_eq!(frame.project.to_string(), "test_project");
+        assert_eq!(
+            frame.project,
+            NonEmptyString::new("test_project").unwrap().into()
+        );
         assert_eq!(frame.id, "abc123");
         assert_eq!(frame.tags.len(), 2);
         assert_eq!(frame.tags[0].to_string(), "tag1");
@@ -365,9 +368,14 @@ impl StateStoreBackend for Store {
         let mut file = File::open(&self.config.get_state_path())?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
-        let ongoing_frame: OngoingFrame =
-            serde_json::from_str(&contents).map_err(StoreError::from)?;
-        Ok(Some(ongoing_frame.into()))
+        Ok(match serde_json::from_str::<OngoingFrame>(&contents) {
+            Ok(f) => Some(f.into()),
+            Err(_) => {
+                // Deserialization failed. This is ok as watson write {} to the file to indicate no ongoing frame, which is
+                // not deserializable into Onboarding.
+                None
+            }
+        })
     }
 
     fn store(&self, state: &WatsupOngoingFrame) -> Result<(), Self::StateStoreBackendError> {
@@ -476,6 +484,20 @@ mod store_tests {
         let backend: &dyn StateStoreBackend<StateStoreBackendError = StoreError> =
             &Store::new(test_config.config);
         assert!(backend.get().unwrap().is_none())
+    }
+
+    #[test]
+    /// Watson leaves the `state` file empty and only has a an empty JSON `{}` object in it.
+    fn no_ongoing_frame_compatibility_with_watson() {
+        let test_config = get_test_config();
+        // Write `{}` to the state file
+        std::fs::write(test_config.config.get_state_path(), "{}").unwrap();
+
+        let backend: &dyn StateStoreBackend<StateStoreBackendError = StoreError> =
+            &Store::new(test_config.config);
+
+        // Should return None, not error
+        assert!(backend.get().unwrap().is_none());
     }
 
     #[test]

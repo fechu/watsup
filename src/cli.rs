@@ -6,7 +6,6 @@ use std::process::Command as ProcessCommand;
 use chrono::DateTime;
 use chrono::Duration;
 use chrono::Local;
-use chrono::TimeZone;
 use chrono_humanize::HumanTime;
 use clap::{Parser, Subcommand};
 use log::info;
@@ -48,7 +47,7 @@ pub enum Command {
     /// Stop the current frame
     Stop {
         /// The date at which to stop the tracking
-        #[arg(long, value_parser = parse_datetime_today)]
+        #[arg(long, value_parser = crate::cli_args::parse_datetime_now)]
         at: Option<DateTime<Local>>,
     },
     /// Cancel the current frame
@@ -71,86 +70,12 @@ pub enum Command {
         #[arg(short, long)]
         current: bool,
         /// The date and time from which to show the frames. Defaults to the beginning of the current week.
-        #[arg(short, long, value_parser = parse_from_datetime)]
+        #[arg(short, long, value_parser = crate::cli_args::parse_beginning_of_day)]
         from: Option<DateTime<Local>>,
         /// The date and time until which to show the frames. Defaults to now.
-        #[arg(short, long, value_parser = parse_to_datetime)]
+        #[arg(short, long, value_parser = crate::cli_args::parse_end_of_day)]
         to: Option<DateTime<Local>>,
     },
-}
-
-/// Variants for parsing a date, time or datetime argument from the command line.
-/// See `parse_datetime` for usage
-enum DateTimeArgument {
-    DateTime(chrono::NaiveDateTime),
-    Date(chrono::NaiveDate),
-    Time(chrono::NaiveTime),
-}
-
-/// Parse a datetime string into a `chrono::DateTime<Local>`
-///
-/// Accepts formats "YYYY-MM-DD HH:MM" or "HH:MM"
-fn parse_datetime(arg: &str) -> Result<DateTimeArgument, String> {
-    let arg = arg.trim();
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(arg, "%Y-%m-%d %H:%M") {
-        Ok(DateTimeArgument::DateTime(dt))
-    } else if let Ok(date) = chrono::NaiveDate::parse_from_str(arg, "%Y-%m-%d") {
-        Ok(DateTimeArgument::Date(date))
-    } else if let Ok(time) = chrono::NaiveTime::parse_from_str(arg, "%H:%M") {
-        Ok(DateTimeArgument::Time(time))
-    } else {
-        Err("Invalid datetime expected format YYYY-MM-DD HH:MM or HH:MM".to_string())
-    }
-}
-
-/// Parse a start date
-/// By default if the time is not provided, the time will be set to 00:00 to include frames
-/// from the very beginning of the day
-fn parse_from_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
-    match parse_datetime(arg)? {
-        DateTimeArgument::DateTime(dt) => Ok(Local.from_local_datetime(&dt).unwrap()),
-        DateTimeArgument::Date(date) => {
-            let time = chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap();
-            Ok(Local.from_local_datetime(&date.and_time(time)).unwrap())
-        }
-        DateTimeArgument::Time(time) => {
-            let date = Local::now();
-            Ok(date.with_time(time).unwrap())
-        }
-    }
-}
-
-/// Parse a date or time or datetime
-/// If any part is missing is it filled with the current date or time
-fn parse_datetime_today(arg: &str) -> Result<chrono::DateTime<Local>, String> {
-    match parse_datetime(arg)? {
-        DateTimeArgument::DateTime(dt) => Ok(Local.from_local_datetime(&dt).unwrap()),
-        DateTimeArgument::Date(date) => {
-            let time = Local::now().time();
-            Ok(Local.from_local_datetime(&date.and_time(time)).unwrap())
-        }
-        DateTimeArgument::Time(time) => {
-            let date = Local::now();
-            Ok(date.with_time(time).unwrap())
-        }
-    }
-}
-
-/// Parse an end date
-/// By default if the time is not provided, the time will be set to 23:59 to include frames
-/// from the very end of the day
-fn parse_to_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
-    match parse_datetime(arg)? {
-        DateTimeArgument::DateTime(dt) => Ok(Local.from_local_datetime(&dt).unwrap()),
-        DateTimeArgument::Date(date) => {
-            let time = chrono::NaiveTime::from_hms_opt(23, 59, 59).unwrap();
-            Ok(Local.from_local_datetime(&date.and_time(time)).unwrap())
-        }
-        DateTimeArgument::Time(time) => {
-            let date = Local::now();
-            Ok(date.with_time(time).unwrap())
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

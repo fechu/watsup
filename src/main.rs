@@ -5,6 +5,7 @@ use clap::Parser;
 use simplelog::{Config, WriteLogger};
 
 mod cli;
+mod cli_args;
 mod common;
 mod config;
 mod frame;

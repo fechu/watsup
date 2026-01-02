@@ -4,6 +4,7 @@ use std::{
 };
 
 use chrono::{DateTime, Duration, Local, NaiveDateTime};
+use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
 use crate::{common::NonEmptyString, state::OngoingFrame};
@@ -27,7 +28,7 @@ impl From<NonEmptyString> for ProjectName {
 
 impl Display for ProjectName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.0.to_string().magenta())
     }
 }
 

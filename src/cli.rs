@@ -16,6 +16,7 @@ use crate::frame::CompletedFrame;
 use crate::frame::Frame;
 use crate::frame::FrameEdit;
 use crate::frame::FrameStore;
+use crate::frame::ProjectName;
 use crate::log::FrameLog;
 use crate::state;
 use crate::state::Ongoing;
@@ -134,7 +135,7 @@ fn parse_to_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
 
 #[derive(Debug, Clone)]
 pub enum CliError<E1, E2> {
-    OngoingProject(NonEmptyString),
+    OngoingProject(ProjectName),
     InvalidProjectName,
     FrameStoreError(E1),
     StateStoreError(E2),
@@ -273,8 +274,9 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
         tags: &[String],
         no_gap: &bool,
     ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
-        let project =
-            NonEmptyString::new(&project.to_string()).ok_or(CliError::InvalidProjectName)?;
+        let project = ProjectName::from(
+            NonEmptyString::new(&project.to_string()).ok_or(CliError::InvalidProjectName)?,
+        );
         let tags = tags
             .iter()
             .filter_map(|tag| NonEmptyString::new(tag))

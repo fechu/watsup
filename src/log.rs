@@ -64,7 +64,7 @@ mod log_tests {
     fn create_test_frame(start: DateTime<Local>, end: Option<DateTime<Local>>) -> CompletedFrame {
         let end_time = end.unwrap_or(start + Duration::minutes(15));
         CompletedFrame::from_frame(Frame::new(
-            NonEmptyString::new("project name").unwrap(),
+            NonEmptyString::new("project name").unwrap().into(),
             None,
             Some(start),
             Some(end_time),

@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    hash::{DefaultHasher, Hasher},
+    hash::{DefaultHasher, Hash, Hasher},
 };
 
 use chrono::{DateTime, Duration, Local, NaiveDateTime};
@@ -15,6 +15,40 @@ fn generate_id() -> String {
     format!("{:x}", hasher.finish())
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+/// Represents a project name
+pub struct ProjectName(NonEmptyString);
+
+impl From<NonEmptyString> for ProjectName {
+    fn from(string: NonEmptyString) -> Self {
+        ProjectName(string)
+    }
+}
+
+impl Display for ProjectName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Hash for ProjectName {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl PartialOrd for ProjectName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ProjectName {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 /// Represents a frame associated with a specific project.
 ///
@@ -22,7 +56,7 @@ fn generate_id() -> String {
 /// and provide methods to interact with it.
 pub struct Frame {
     /// The project the frame is associated with.
-    project: NonEmptyString,
+    project: ProjectName,
 
     /// The frame's unique identifier.
     id: String,
@@ -42,7 +76,7 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(
-        project: NonEmptyString,
+        project: ProjectName,
         id: Option<String>,
         start: Option<chrono::DateTime<Local>>,
         end: Option<chrono::DateTime<Local>>,
@@ -83,7 +117,7 @@ impl Frame {
         self.last_edit = chrono::Local::now();
     }
 
-    pub fn project(&self) -> &NonEmptyString {
+    pub fn project(&self) -> &ProjectName {
         &self.project
     }
 
@@ -173,7 +207,7 @@ const EDIT_DATETIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 #[derive(Serialize, Deserialize, Debug)]
 /// Frame representation used for editing a frame
 pub struct FrameEdit {
-    project: NonEmptyString,
+    project: ProjectName,
     start: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     stop: Option<String>,
@@ -181,7 +215,7 @@ pub struct FrameEdit {
 }
 
 impl FrameEdit {
-    pub fn project(&self) -> &NonEmptyString {
+    pub fn project(&self) -> &ProjectName {
         &self.project
     }
 
@@ -229,6 +263,14 @@ impl From<&OngoingFrame> for FrameEdit {
     }
 }
 
+impl PartialEq for ProjectName {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for ProjectName {}
+
 pub trait FrameStore {
     type FrameStoreError;
 
@@ -238,7 +280,7 @@ pub trait FrameStore {
     fn save_frame(&self, frame: CompletedFrame) -> Result<(), Self::FrameStoreError>;
 
     /// Get all the projects of frames stored in this store.
-    fn get_projects(&self) -> Result<Vec<NonEmptyString>, Self::FrameStoreError>;
+    fn get_projects(&self) -> Result<Vec<ProjectName>, Self::FrameStoreError>;
 
     /// Get the last frame, ordered by completion datetime.
     fn get_last_frame(&self) -> Option<CompletedFrame>;

@@ -10,7 +10,7 @@ use serde_json::json;
 use crate::{
     common::NonEmptyString,
     config::Config,
-    frame::{self, CompletedFrame, FrameStore},
+    frame::{self, CompletedFrame, FrameStore, ProjectName},
     state::{OngoingFrame as WatsupOngoingFrame, StateStoreBackend},
 };
 
@@ -18,7 +18,7 @@ use crate::{
 pub struct Frame {
     start_timestamp: i64,
     end_timestamp: i64,
-    project: NonEmptyString,
+    project: ProjectName,
     id: String,
     tags: Vec<NonEmptyString>,
     last_edit_timestamp: i64,
@@ -26,7 +26,7 @@ pub struct Frame {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct OngoingFrame {
-    project: NonEmptyString,
+    project: ProjectName,
     start: i64,
     tags: Vec<NonEmptyString>,
 }
@@ -125,7 +125,7 @@ impl<'de> Deserialize<'de> for Frame {
         let project = iter
             .next()
             .ok_or_else(|| serde::de::Error::custom("Missing project"))?;
-        let project: NonEmptyString =
+        let project: ProjectName =
             serde_json::from_value(project).map_err(serde::de::Error::custom)?;
         let id = iter
             .next()
@@ -161,7 +161,7 @@ mod frame_serialization_tests {
         Frame {
             start_timestamp: 1620000000,
             end_timestamp: 1620003600,
-            project: NonEmptyString::new("test_project").unwrap(),
+            project: NonEmptyString::new("test_project").unwrap().into(),
             id: "abc123".to_string(),
             tags: vec![
                 NonEmptyString::new("tag1").unwrap(),
@@ -222,7 +222,7 @@ mod state_serializaton_tests {
         // Create a temporary file with valid state data
 
         let ongoing_frame = OngoingFrame {
-            project: NonEmptyString::new("Project").unwrap(),
+            project: NonEmptyString::new("Project").unwrap().into(),
             start: Local::now().timestamp(),
             tags: vec![],
         };
@@ -314,13 +314,13 @@ impl FrameStore for Store {
         self.save(frames)
     }
 
-    fn get_projects(&self) -> Result<Vec<NonEmptyString>, Self::FrameStoreError> {
-        let projects: HashSet<NonEmptyString> = self
+    fn get_projects(&self) -> Result<Vec<ProjectName>, Self::FrameStoreError> {
+        let projects: HashSet<ProjectName> = self
             .load()?
             .iter()
             .map(|f| f.frame().project().clone())
             .collect();
-        let mut projects: Vec<NonEmptyString> = projects.into_iter().collect();
+        let mut projects: Vec<ProjectName> = projects.into_iter().collect();
         projects.sort();
         Ok(projects)
     }
@@ -407,20 +407,24 @@ mod store_tests {
         }
     }
 
-    fn get_test_frame_with_project(project: NonEmptyString) -> Frame {
+    fn get_test_frame_with_project(project: ProjectName) -> Frame {
         Frame::new(project, None, None, None, vec![], None)
     }
 
     fn get_test_frame() -> Frame {
-        get_test_frame_with_project("project name".try_into().unwrap())
+        get_test_frame_with_project(NonEmptyString::new("project name").unwrap().into())
     }
 
     fn get_test_ongoing_frame() -> WatsupOngoingFrame {
         let start = chrono::Local.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
-        WatsupOngoingFrame::new("project name".try_into().unwrap(), start, vec![])
+        WatsupOngoingFrame::new(
+            NonEmptyString::new("project name").unwrap().into(),
+            start,
+            vec![],
+        )
     }
 
-    fn get_completed_test_frame_with_project(project: NonEmptyString) -> CompletedFrame {
+    fn get_completed_test_frame_with_project(project: ProjectName) -> CompletedFrame {
         get_test_frame_with_project(project).set_end(Local::now())
     }
 
@@ -503,7 +507,7 @@ mod store_tests {
     fn test_get_projects_of_multiple_frames_returns_no_duplicates() {
         let test_config = get_test_config();
         let store = Store::new(test_config.config);
-        let project = NonEmptyString::new("project").unwrap();
+        let project = ProjectName::from(NonEmptyString::new("project").unwrap());
         let frame1 = get_completed_test_frame_with_project(project.clone());
         let frame2 = get_completed_test_frame_with_project(project.clone());
 

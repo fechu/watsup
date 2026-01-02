@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 
 use crate::{
     common::NonEmptyString,
-    frame::{CompletedFrame, Frame, FrameEdit},
+    frame::{CompletedFrame, Frame, FrameEdit, ProjectName},
 };
 
 /// The backend to store the state (i.e. ongoing frames)
@@ -89,7 +89,7 @@ where
 {
     pub fn start(
         self,
-        project: NonEmptyString,
+        project: ProjectName,
         start: DateTime<Local>,
         tags: Vec<NonEmptyString>,
     ) -> Result<FrameStarted<'a, S>, S::StateStoreBackendError> {
@@ -118,13 +118,13 @@ pub fn get_state_store<'a, S: StateStoreBackend>(
 
 #[derive(Debug)]
 pub struct OngoingFrame {
-    project: NonEmptyString,
+    project: ProjectName,
     start: DateTime<Local>,
     tags: Vec<NonEmptyString>,
 }
 
 impl OngoingFrame {
-    pub fn new(project: NonEmptyString, start: DateTime<Local>, tags: Vec<NonEmptyString>) -> Self {
+    pub fn new(project: ProjectName, start: DateTime<Local>, tags: Vec<NonEmptyString>) -> Self {
         Self {
             project,
             start,
@@ -132,7 +132,7 @@ impl OngoingFrame {
         }
     }
 
-    pub fn project(&self) -> &NonEmptyString {
+    pub fn project(&self) -> &ProjectName {
         &self.project
     }
 

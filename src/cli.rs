@@ -46,7 +46,11 @@ pub enum Command {
         no_gap: bool,
     },
     /// Stop the current frame
-    Stop,
+    Stop {
+        /// The date at which to stop the tracking
+        #[arg(long, value_parser = parse_datetime_today)]
+        at: Option<DateTime<Local>>,
+    },
     /// Cancel the current frame
     Cancel,
     /// Edit a frame
@@ -116,6 +120,22 @@ fn parse_from_datetime(arg: &str) -> Result<chrono::DateTime<Local>, String> {
     }
 }
 
+/// Parse a date or time or datetime
+/// If any part is missing is it filled with the current date or time
+fn parse_datetime_today(arg: &str) -> Result<chrono::DateTime<Local>, String> {
+    match parse_datetime(arg)? {
+        DateTimeArgument::DateTime(dt) => Ok(Local.from_local_datetime(&dt).unwrap()),
+        DateTimeArgument::Date(date) => {
+            let time = Local::now().time();
+            Ok(Local.from_local_datetime(&date.and_time(time)).unwrap())
+        }
+        DateTimeArgument::Time(time) => {
+            let date = Local::now();
+            Ok(date.with_time(time).unwrap())
+        }
+    }
+}
+
 /// Parse an end date
 /// By default if the time is not provided, the time will be set to 23:59 to include frames
 /// from the very end of the day
@@ -145,6 +165,7 @@ pub enum CliError<E1, E2> {
     TempFileError(String),
     SerializationError(String),
     InvalidFrame(Option<String>),
+    FutureStopDate,
 }
 
 impl<E1: Display, E2: Display> Display for CliError<E1, E2> {
@@ -160,7 +181,7 @@ impl<E1: Display, E2: Display> Display for CliError<E1, E2> {
                 write!(f, "Failed to store frame. details={}", details)
             }
             CliError::StateStoreError(details) => {
-                write!(f, "Failed to store state. details={}", details)
+                write!(f, "State store error. details={}", details)
             }
             CliError::NoOngoingRecording => {
                 write!(f, "No project started")
@@ -183,6 +204,9 @@ impl<E1: Display, E2: Display> Display for CliError<E1, E2> {
                     "Invalid frame: {}",
                     details.clone().unwrap_or(String::from("No Details"))
                 )
+            }
+            CliError::FutureStopDate => {
+                write!(f, "End date cannot be in the future")
             }
         }
     }
@@ -222,8 +246,14 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
                     self.start(state_store, project, tags, no_gap)
                 }
             },
-            Command::Stop => match state_store {
-                StateStoreVariant::Ongoing(state_store) => self.stop(state_store),
+            Command::Stop { at } => match state_store {
+                StateStoreVariant::Ongoing(state_store) => {
+                    let stop_datetime = at.unwrap_or(Local::now());
+                    if stop_datetime > Local::now() {
+                        return Err(CliError::FutureStopDate);
+                    }
+                    self.stop(&stop_datetime, state_store)
+                }
                 StateStoreVariant::Stopped(_) => Err(CliError::NoOngoingRecording),
             },
             Command::Cancel => match state_store {
@@ -306,16 +336,21 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
 
     fn stop(
         &self,
+        at: &DateTime<Local>,
         state_store: StateStore<T, Ongoing>,
     ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
-        let completed_frame = state_store.stop().map_err(CliError::StateStoreError)?.frame;
+        let completed_frame = state_store
+            .stop(at)
+            .map_err(CliError::StateStoreError)?
+            .frame;
         println!(
-            "Stopping project {}, started {}",
+            "Stopping project {} at {}, started {}",
             completed_frame.frame().project(),
+            completed_frame.end(),
             completed_frame.frame().start()
         );
         self.frame_store
-            .save_frame(completed_frame)
+            .save_frame(&completed_frame)
             .map_err(CliError::FrameStoreError)?;
         Ok(())
     }
@@ -372,7 +407,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
             frame
         );
         self.frame_store
-            .save_frame(CompletedFrame::from_frame(frame).unwrap())
+            .save_frame(&CompletedFrame::from_frame(frame).unwrap())
             .map_err(CliError::FrameStoreError)
     }
 

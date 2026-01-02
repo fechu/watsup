@@ -51,9 +51,12 @@ impl<'a, S> StateStore<'a, S, Ongoing>
 where
     S: StateStoreBackend,
 {
-    pub fn stop(self) -> Result<FrameStopped<'a, S>, S::StateStoreBackendError> {
+    pub fn stop(
+        self,
+        at: &DateTime<Local>,
+    ) -> Result<FrameStopped<'a, S>, S::StateStoreBackendError> {
         let frame = Frame::from(self.get_ongoing()?);
-        let completed_frame = frame.set_end(Local::now());
+        let completed_frame = frame.set_end(at.clone());
         self.backend.clear()?;
         Ok(FrameStopped {
             frame: completed_frame,

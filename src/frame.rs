@@ -278,7 +278,7 @@ pub trait FrameStore {
     /// Save a frame to the store.
     /// If the frame already exists (identified by "id") it will be updated, otherwise inserted.
     /// Returns an error if the saving failed.
-    fn save_frame(&self, frame: CompletedFrame) -> Result<(), Self::FrameStoreError>;
+    fn save_frame(&self, frame: &CompletedFrame) -> Result<(), Self::FrameStoreError>;
 
     /// Get all the projects of frames stored in this store.
     fn get_projects(&self) -> Result<Vec<ProjectName>, Self::FrameStoreError>;

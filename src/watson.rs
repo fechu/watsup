@@ -305,11 +305,11 @@ impl FrameStore for Store {
 
     fn save_frame(
         &self,
-        completed_frame: frame::CompletedFrame,
+        completed_frame: &frame::CompletedFrame,
     ) -> Result<(), Self::FrameStoreError> {
         let mut frames = self.load()?;
         frames.retain(|f| f.frame().id() != completed_frame.frame().id());
-        frames.push(completed_frame);
+        frames.push(completed_frame.clone());
         frames.sort();
         self.save(frames)
     }
@@ -446,7 +446,7 @@ mod store_tests {
         let test_frame = get_completed_test_frame();
         assert!(store.get_last_frame().is_none());
         store
-            .save_frame(test_frame)
+            .save_frame(&test_frame)
             .expect("Saving test frame failed");
 
         assert!(store.get_last_frame().is_some());
@@ -495,7 +495,7 @@ mod store_tests {
         let frame = get_completed_test_frame();
 
         let project = frame.frame().project().clone();
-        store.save_frame(frame).expect("Failed to save frame");
+        store.save_frame(&frame).expect("Failed to save frame");
 
         let projects = store.get_projects().expect("Failed to get projects");
 
@@ -511,8 +511,8 @@ mod store_tests {
         let frame1 = get_completed_test_frame_with_project(project.clone());
         let frame2 = get_completed_test_frame_with_project(project.clone());
 
-        store.save_frame(frame1).expect("Failed to save frame");
-        store.save_frame(frame2).expect("Failed to save frame");
+        store.save_frame(&frame1).expect("Failed to save frame");
+        store.save_frame(&frame2).expect("Failed to save frame");
 
         let projects = store.get_projects().expect("Failed to get projects");
 

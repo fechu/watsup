@@ -21,6 +21,10 @@ impl InMemoryStore {
             ongoing_frame: RefCell::new(None),
         }
     }
+
+    pub fn has_ongoing_frame(&self) -> bool {
+        self.ongoing_frame.borrow().is_some()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -136,7 +140,7 @@ mod tests {
     fn test_new_store_is_empty() {
         let store = InMemoryStore::new();
         assert!(store.get_last_frame().is_none());
-        assert!(store.get().unwrap().is_none());
+        assert!(!store.has_ongoing_frame())
     }
 
     #[test]
@@ -233,11 +237,11 @@ mod tests {
         let ongoing = create_test_ongoing_frame(project);
 
         store.store(&ongoing).unwrap();
-        assert!(store.get().unwrap().is_some());
+        assert!(store.has_ongoing_frame());
 
         let had_frame = store.clear().unwrap();
         assert!(had_frame);
-        assert!(store.get().unwrap().is_none());
+        assert!(!store.has_ongoing_frame());
     }
 
     #[test]

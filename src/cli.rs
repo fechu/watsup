@@ -131,13 +131,13 @@ impl<E1: Display, E2: Display> Display for CliError<E1, E2> {
 }
 
 /// The class responsible for executing commands
-pub struct CommandExecutor<T: FrameStore + StateStoreBackend> {
+pub struct CommandExecutor<'a, T: FrameStore + StateStoreBackend> {
     /// The place where frames are stored
-    store: T,
+    store: &'a T,
 }
 
-impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
-    pub fn new(store: T) -> Self {
+impl<'a, T: FrameStore + StateStoreBackend> CommandExecutor<'a, T> {
+    pub fn new(store: &'a T) -> Self {
         Self { store }
     }
 
@@ -146,7 +146,7 @@ impl<T: FrameStore + StateStoreBackend> CommandExecutor<T> {
         command: &Command,
     ) -> Result<(), CliError<T::FrameStoreError, T::StateStoreBackendError>> {
         info!("Executing command: {:?}", command);
-        let state_store = get_state_store(&self.store).map_err(CliError::StateStoreError)?;
+        let state_store = get_state_store(self.store).map_err(CliError::StateStoreError)?;
         match command {
             Command::Start {
                 project,
@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn test_start_project() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let command = Command::Start {
             project: "test_project".to_string(),
@@ -419,13 +419,13 @@ mod tests {
 
         let result = executor.execute_command(&command);
         assert!(result.is_ok());
-        assert!(executor.store.get().unwrap().is_some());
+        assert!(store.has_ongoing_frame());
     }
 
     #[test]
     fn test_start_project_twice_returns_error() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let command = Command::Start {
             project: "test_project".to_string(),
@@ -446,7 +446,7 @@ mod tests {
     #[test]
     fn test_stop_without_start_returns_error() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let command = Command::Stop { at: None };
 
@@ -461,7 +461,7 @@ mod tests {
     #[test]
     fn test_start_and_stop_project() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let start_command = Command::Start {
             project: "test project".to_string(),
@@ -470,17 +470,19 @@ mod tests {
         };
 
         executor.execute_command(&start_command).unwrap();
+        assert!(store.has_ongoing_frame());
 
         let stop_command = Command::Stop { at: None };
         let result = executor.execute_command(&stop_command);
 
         assert!(result.is_ok());
+        assert!(!store.has_ongoing_frame());
     }
 
     #[test]
     fn test_cancel_without_start_returns_error() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let command = Command::Cancel;
 
@@ -495,7 +497,7 @@ mod tests {
     #[test]
     fn test_start_and_cancel_project() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let start_command = Command::Start {
             project: "test project".to_string(),
@@ -504,18 +506,19 @@ mod tests {
         };
 
         executor.execute_command(&start_command).unwrap();
+        assert!(store.has_ongoing_frame());
 
         let cancel_command = Command::Cancel;
         let result = executor.execute_command(&cancel_command);
 
         assert!(result.is_ok());
-        assert!(executor.store.get().unwrap().is_none())
+        assert!(!store.has_ongoing_frame())
     }
 
     #[test]
     fn test_list_projects_empty() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let command = Command::Projects;
         let result = executor.execute_command(&command);
@@ -526,7 +529,7 @@ mod tests {
     #[test]
     fn test_stop_with_future_date_returns_error() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let start_command = Command::Start {
             project: "test project".to_string(),
@@ -552,7 +555,7 @@ mod tests {
     #[test]
     fn test_start_with_tags() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         let command = Command::Start {
             project: "test project".to_string(),
@@ -567,7 +570,7 @@ mod tests {
     #[test]
     fn test_start_with_no_gap() {
         let store = InMemoryStore::new();
-        let mut executor = CommandExecutor::new(store);
+        let mut executor = CommandExecutor::new(&store);
 
         // First, create and stop a frame
         let start1 = Command::Start {
@@ -589,5 +592,6 @@ mod tests {
 
         let result = executor.execute_command(&start2);
         assert!(result.is_ok());
+        assert!(store.has_ongoing_frame());
     }
 }

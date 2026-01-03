@@ -1,29 +1,20 @@
 use std::env;
-use std::fmt::Display;
-use std::fs::File;
 use std::process::Command as ProcessCommand;
+use std::{fmt::Display, fs::File};
 
-use chrono::DateTime;
-use chrono::Duration;
-use chrono::Local;
+use chrono::{DateTime, Duration, Local};
 use chrono_humanize::HumanTime;
 use clap::{Parser, Subcommand};
 use log::info;
 
-use crate::common::NonEmptyString;
-use crate::frame::CompletedFrame;
-use crate::frame::Frame;
-use crate::frame::FrameEdit;
-use crate::frame::FrameStore;
-use crate::frame::ProjectName;
-use crate::log::FrameLog;
-use crate::state;
-use crate::state::Ongoing;
-use crate::state::StateStore;
-use crate::state::StateStoreBackend;
-use crate::state::StateStoreVariant;
-use crate::state::Stopped;
-use crate::state::get_state_store;
+use crate::{
+    common::NonEmptyString,
+    frame::{CompletedFrame, Frame, FrameEdit, FrameStore, ProjectName},
+    log::FrameLog,
+    state::{
+        self, Ongoing, StateStore, StateStoreBackend, StateStoreVariant, Stopped, get_state_store,
+    },
+};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

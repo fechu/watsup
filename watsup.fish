@@ -29,7 +29,7 @@ function w
             $WATSUP_BINARY cancel
             echo "Tracking aborted."
         case edit
-            set frame_line ($WATSUP_BINARY log --current --from 2000-01-01 | grep -E '^\s+[0-9a-f]+' | tail -20 | fzf --prompt="Select a frame to edit: ")
+            set frame_line ($WATSUP_BINARY log --current --from 2000-01-01 | grep -E '^\s+[0-9a-f]+' | tail -20 | tac | fzf --prompt="Select a frame to edit: ")
             if test -n "$frame_line"
                 set frame_id (string trim $frame_line | string split -f1 ' ')
                 $WATSUP_BINARY edit $frame_id

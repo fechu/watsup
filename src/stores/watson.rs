@@ -244,6 +244,7 @@ mod state_serializaton_tests {
 pub enum StoreError {
     Serialization(serde_json::Error),
     IO(std::io::Error),
+    AmbiguousFrameId(String),
 }
 
 impl Display for StoreError {
@@ -251,6 +252,9 @@ impl Display for StoreError {
         match self {
             StoreError::Serialization(e) => write!(f, "Serialization error: {}", e),
             StoreError::IO(e) => write!(f, "IO error: {}", e),
+            StoreError::AmbiguousFrameId(id) => {
+                write!(f, "Ambiguous frame ID: multiple frames match prefix '{}'", id)
+            }
         }
     }
 }
@@ -337,10 +341,14 @@ impl FrameStore for Store {
 
     fn get_frame(&self, frame_id: &str) -> Result<Option<CompletedFrame>, Self::FrameStoreError> {
         let frames = self.load()?;
-        Ok(frames
+        let mut matches = frames
             .iter()
-            .find(|frame| frame.frame().id() == frame_id)
-            .cloned())
+            .filter(|frame| frame.frame().id().starts_with(frame_id));
+        let result = matches.next().cloned();
+        if matches.next().is_some() {
+            return Err(StoreError::AmbiguousFrameId(frame_id.to_string()));
+        }
+        Ok(result)
     }
 
     fn get_frames(

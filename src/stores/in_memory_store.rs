@@ -31,12 +31,16 @@ impl InMemoryStore {
 #[allow(dead_code)]
 pub enum InMemoryStoreError {
     Generic(String),
+    AmbiguousFrameId(String),
 }
 
 impl std::fmt::Display for InMemoryStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InMemoryStoreError::Generic(msg) => write!(f, "InMemoryStore error: {}", msg),
+            InMemoryStoreError::AmbiguousFrameId(id) => {
+                write!(f, "Ambiguous frame ID: multiple frames match prefix '{}'", id)
+            }
         }
     }
 }
@@ -68,7 +72,14 @@ impl FrameStore for InMemoryStore {
 
     fn get_frame(&self, frame_id: &str) -> Result<Option<CompletedFrame>, Self::FrameStoreError> {
         let frames = self.frames.borrow();
-        Ok(frames.get(frame_id).cloned())
+        let mut matches = frames
+            .iter()
+            .filter(|(id, _)| id.starts_with(frame_id));
+        let result = matches.next().map(|(_, frame)| frame.clone());
+        if matches.next().is_some() {
+            return Err(InMemoryStoreError::AmbiguousFrameId(frame_id.to_string()));
+        }
+        Ok(result)
     }
 
     fn get_frames(

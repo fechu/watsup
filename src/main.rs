@@ -41,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = cli::Cli::parse();
     let config = config::Config::default();
+    config.ensure_data_store_folder_exists()?;
     let frame_store = stores::watson::Store::new(config);
 
     let mut command_executor = CommandExecutor::new(&frame_store);

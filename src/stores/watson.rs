@@ -549,4 +549,46 @@ mod store_tests {
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0], project);
     }
+
+    fn get_completed_test_frame_with_id(id: &str) -> CompletedFrame {
+        let project = NonEmptyString::new("project name").unwrap().into();
+        let start = Local.with_ymd_and_hms(2025, 1, 1, 9, 0, 0).unwrap();
+        let end = Local.with_ymd_and_hms(2025, 1, 1, 10, 0, 0).unwrap();
+        let frame = Frame::new(project, Some(id.to_string()), Some(start), Some(end), vec![], None);
+        CompletedFrame::from_frame(frame).unwrap()
+    }
+
+    #[test]
+    fn test_get_frame_by_prefix() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let frame = get_completed_test_frame_with_id("aabbccdd1234");
+        store.save_frame(&frame).expect("Failed to save frame");
+
+        let result = store.get_frame("aabbcc").expect("get_frame failed");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().frame().id(), "aabbccdd1234");
+    }
+
+    #[test]
+    fn test_get_frame_by_prefix_returns_none_for_unknown_prefix() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        let frame = get_completed_test_frame_with_id("aabbccdd1234");
+        store.save_frame(&frame).expect("Failed to save frame");
+
+        let result = store.get_frame("ffffff").expect("get_frame failed");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_frame_by_ambiguous_prefix_returns_error() {
+        let test_config = get_test_config();
+        let store = Store::new(test_config.config);
+        store.save_frame(&get_completed_test_frame_with_id("aabbccdd1111")).expect("Failed to save frame");
+        store.save_frame(&get_completed_test_frame_with_id("aabbccdd2222")).expect("Failed to save frame");
+
+        let result = store.get_frame("aabbccdd");
+        assert!(matches!(result, Err(StoreError::AmbiguousFrameId(_))));
+    }
 }

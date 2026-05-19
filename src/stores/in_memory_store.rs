@@ -289,4 +289,43 @@ mod tests {
         let retrieved = store.get_frame(&frame_id).unwrap().unwrap();
         assert_eq!(retrieved.end().hour(), 12);
     }
+
+    fn create_test_frame_with_id(id: &str) -> CompletedFrame {
+        let project = create_test_project();
+        let start = Local.with_ymd_and_hms(2025, 1, 1, 9, 0, 0).unwrap();
+        let end = Local.with_ymd_and_hms(2025, 1, 1, 10, 0, 0).unwrap();
+        let frame = Frame::new(project, Some(id.to_string()), Some(start), Some(end), vec![], None);
+        CompletedFrame::from_frame(frame).unwrap()
+    }
+
+    #[test]
+    fn test_get_frame_by_prefix() {
+        let store = InMemoryStore::new();
+        let frame = create_test_frame_with_id("aabbccdd1234");
+        store.save_frame(&frame).unwrap();
+
+        let result = store.get_frame("aabbcc").unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().frame().id(), "aabbccdd1234");
+    }
+
+    #[test]
+    fn test_get_frame_by_prefix_returns_none_for_unknown_prefix() {
+        let store = InMemoryStore::new();
+        let frame = create_test_frame_with_id("aabbccdd1234");
+        store.save_frame(&frame).unwrap();
+
+        let result = store.get_frame("ffffff").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_frame_by_ambiguous_prefix_returns_error() {
+        let store = InMemoryStore::new();
+        store.save_frame(&create_test_frame_with_id("aabbccdd1111")).unwrap();
+        store.save_frame(&create_test_frame_with_id("aabbccdd2222")).unwrap();
+
+        let result = store.get_frame("aabbccdd");
+        assert!(matches!(result, Err(InMemoryStoreError::AmbiguousFrameId(_))));
+    }
 }

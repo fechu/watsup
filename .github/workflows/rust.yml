@@ -17,9 +17,5 @@ jobs:
       with:
         extra_nix_config: |
           experimental-features = nix-command flakes
-    - name: Flake check
+    - name: Flake check (builds, tests, validates outputs)
       run: nix flake check --print-build-logs
-    - name: Build package
-      run: nix build .#watsup --print-build-logs
-    - name: Run tests
-      run: nix develop --print-build-logs --command cargo test --verbose

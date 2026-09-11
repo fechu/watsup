@@ -17,7 +17,7 @@
           version = "0.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
-          doCheck = false;
+          doCheck = true;
           meta = {
             mainProgram = "watsup";
             description = "Watson time tracker in Rust";

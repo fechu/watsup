@@ -32,6 +32,16 @@ cargo build --release
 
 The binary will be available at `target/release/watsup`.
 
+#### With Nix
+
+If you have Nix with flakes enabled:
+
+```bash
+nix run github:fechu/watsup                # run directly
+nix build                                  # build ./result/bin/watsup
+nix develop                                # dev shell: rustc, clippy, rustfmt, rust-analyzer, fzf
+```
+
 ### Usage
 
 Start tracking your activity:

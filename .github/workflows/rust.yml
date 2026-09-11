@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [ "master" ]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   build:
 
@@ -16,7 +13,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
+    - uses: cachix/install-nix-action@v27
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+    - name: Flake check
+      run: nix flake check --print-build-logs
+    - name: Build package
+      run: nix build .#watsup --print-build-logs
     - name: Run tests
-      run: cargo test --verbose
+      run: nix develop --print-build-logs --command cargo test --verbose

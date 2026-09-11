@@ -18,12 +18,21 @@
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           doCheck = false;
-          meta.mainProgram = "watsup";
+          meta = {
+            mainProgram = "watsup";
+            description = "Watson time tracker in Rust";
+            homepage = "https://github.com/fechu/watsup";
+            license = pkgs.lib.licenses.mit;
+          };
         };
 
         packages.default = self.packages.${system}.watsup;
 
-        apps.watsup = flake-utils.lib.mkApp { drv = self.packages.${system}.watsup; };
+        apps.watsup = {
+          type = "app";
+          program = "${self.packages.${system}.watsup}/bin/watsup";
+          meta.description = "Watson time tracker in Rust";
+        };
         apps.default = self.apps.${system}.watsup;
 
         devShells.default = pkgs.mkShell {
